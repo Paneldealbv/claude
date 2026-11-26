@@ -5,7 +5,10 @@
  * Maakt drie tijdelijke testaccounts (A, B, C) en doorloopt:
  *   A logt in → maakt project → nodigt B uit
  *   B logt in → accepteert uitnodiging → ziet hetzelfde project en dezelfde gegevens
- *   C (geen toegang) ziet niets en kan niets wijzigen
+ *   budget, categorieën en ruimtes (fase 4)
+ *   leveranciers, offertes met PDF, vergelijken, accepteren → contract,
+ *   meer-/minderwerk, termijnschema en status (fase 5)
+ *   C (geen toegang) ziet niets en kan niets wijzigen, ook geen bestanden
  *   niet ingelogd → geen toegang
  * Daarna worden project en testaccounts volledig verwijderd en wordt
  * gecontroleerd dat er niets achterblijft.
@@ -58,6 +61,31 @@ const sql = (query) =>
   });
 
 const geenSessie = { auth: { persistSession: false, autoRefreshToken: false } };
+
+/** Kleine, geldige PDF met één regel tekst (voor de uploadtest). */
+function maakPdf(tekst) {
+  const objecten = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    null, // inhoud
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const inhoud = `BT /F1 24 Tf 72 760 Td (${tekst}) Tj ET`;
+  objecten[3] = `<< /Length ${inhoud.length} >>\nstream\n${inhoud}\nendstream`;
+  let pdf = "%PDF-1.4\n";
+  const posities = [];
+  objecten.forEach((o, i) => {
+    posities.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objecten.length + 1}\n0000000000 65535 f \n`;
+  for (const pos of posities)
+    pdf += `${String(pos).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objecten.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
 
 async function main() {
   const sleutels = await mgmt(`/projects/${REF}/api-keys?reveal=true`);
@@ -487,6 +515,499 @@ async function main() {
       .waitFor({ timeout: 20000 });
     ok(true, "ruimtes: standaard, toevoegen, wijzigen en verwijderen");
 
+    // --- Fase 5: leveranciers, offertes en contracten ------------------------
+    console.log("→ Leveranciers, offertes en contracten");
+    const uuidEind = (pad) =>
+      new RegExp(`${pad}/[0-9a-f-]{36}$`.replaceAll("/", "\\/"));
+    const idUitUrl = (p) => new URL(p.url()).pathname.split("/").pop();
+
+    // Leverancier via de leverancierspagina.
+    await pA.goto(`${APP}/leveranciers`);
+    const levForm = formMet(pA, "IBAN");
+    await levForm
+      .getByLabel("Naam", { exact: true })
+      .fill("Keukenstudio Noord");
+    await levForm.getByLabel("IBAN").fill("nl91 abna 0417 1643 00");
+    await levForm.getByLabel("KvK-nummer").fill("12345678");
+    await levForm
+      .getByRole("button", { name: "Leverancier toevoegen" })
+      .click();
+    await pA.waitForURL(uuidEind("/leveranciers"), { timeout: 20000 });
+    const leverancierId = idUitUrl(pA);
+    const { data: lev } = await clientA
+      .from("suppliers")
+      .select("name, iban, kvk_number")
+      .eq("id", leverancierId)
+      .single();
+    ok(
+      lev?.iban === "NL91ABNA0417164300" && lev.kvk_number === "12345678",
+      "leverancier toegevoegd (IBAN genormaliseerd)",
+    );
+
+    // Offerte 1: twee regels en een PDF.
+    const pdf = maakPdf("Offerte keuken");
+    await pA.goto(`${APP}/offertes/nieuw?leverancier=${leverancierId}`);
+    ok(
+      (await pA.getByLabel("Leverancier", { exact: true }).inputValue()) ===
+        leverancierId,
+      "nieuwe offerte vanaf de leverancier: leverancier staat al ingevuld",
+    );
+    await pA.getByLabel("Titel", { exact: true }).fill("Keuken compleet");
+    await pA.getByLabel("Offertenummer (optioneel)").fill("OF-2026-118");
+    await pA.getByLabel("Offertedatum (optioneel)").fill("12-11-2026");
+    await pA.getByLabel("Geldig tot (optioneel)").fill("31-12-2026");
+    await pA.locator('input[type="file"]').setInputFiles({
+      name: "offerte-keuken.pdf",
+      mimeType: "application/pdf",
+      buffer: pdf,
+    });
+    await pA
+      .getByText("offerte-keuken.pdf", { exact: true })
+      .waitFor({ timeout: 30000 });
+    await pA.getByLabel("Omschrijving regel 1").fill("Keukenblok met werkblad");
+    await pA
+      .getByLabel("Categorie regel 1")
+      .selectOption({ label: "Afbouw › Keuken" });
+    await pA.getByLabel("Bedrag regel 1").fill("21.350");
+    await pA.getByRole("button", { name: "Regel toevoegen" }).click();
+    await pA.getByLabel("Omschrijving regel 2").fill("Apparatuur");
+    await pA
+      .getByLabel("Categorie regel 2")
+      .selectOption({ label: "Afbouw › Keuken" });
+    await pA.getByLabel("Bedrag regel 2").fill("5000");
+    await pA.getByText("€ 26.350,00").waitFor();
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/offerte-nieuw.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Offerte opslaan" }).click();
+    await pA.waitForURL(uuidEind("/offertes"), { timeout: 20000 });
+    const offerte1 = idUitUrl(pA);
+    await pA
+      .getByRole("heading", { level: 1, name: "Keuken compleet" })
+      .waitFor();
+    const { data: q1 } = await clientA
+      .from("quotes")
+      .select(
+        "status, quote_number, quote_date, valid_until, file_id, quote_lines (amount_incl_cents, amount_excl_cents, vat_cents)",
+      )
+      .eq("id", offerte1)
+      .single();
+    ok(
+      q1.status === "ontvangen" &&
+        q1.quote_number === "OF-2026-118" &&
+        q1.quote_date === "2026-11-12" &&
+        q1.valid_until === "2026-12-31" &&
+        q1.file_id &&
+        q1.quote_lines
+          .map((l) => l.amount_incl_cents)
+          .sort((a, b) => a - b)
+          .join() === "500000,2135000" &&
+        q1.quote_lines.every(
+          (l) => l.amount_excl_cents + l.vat_cents === l.amount_incl_cents,
+        ),
+      "offerte opgeslagen met datums, PDF en twee regels (excl. + BTW = incl.)",
+    );
+
+    // De PDF staat in de privé opslag en is via een tijdelijke link te zien.
+    const bekijkLink = await pA.locator("iframe").getAttribute("src");
+    const pdfAntwoord = await fetch(bekijkLink);
+    ok(
+      pdfAntwoord.ok &&
+        pdfAntwoord.headers.get("content-type") === "application/pdf" &&
+        Buffer.from(await pdfAntwoord.arrayBuffer()).equals(pdf),
+      "PDF via tijdelijke link te bekijken (zelfde bestand)",
+    );
+    const xfo = pdfAntwoord.headers.get("x-frame-options");
+    const csp = pdfAntwoord.headers.get("content-security-policy");
+    if (xfo || csp)
+      console.log(`  (bestandslink: x-frame-options=${xfo} csp=${csp})`);
+
+    // Nog niet geaccepteerd: het budget verandert niet, wel het voorbeeld.
+    const effect = pA.getByRole("table", { name: /Prognose per categorie/ });
+    ok(
+      (await effect.getByRole("row", { name: /Afbouw › Keuken/ }).innerText())
+        .replace(/\s+/g, " ")
+        .includes("€ 25.000 € 26.350"),
+      "voorbeeld vóór accepteren: Keuken van € 25.000 naar € 26.350",
+    );
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/offerte-detail.png`,
+        fullPage: true,
+      });
+
+    // Offerte 2: nieuwe leverancier direct in het formulier, zelfde PDF.
+    await pA.goto(`${APP}/offertes/nieuw`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption("__nieuw__");
+    await pA.getByLabel("Naam nieuwe leverancier").fill("Keuken & Co");
+    await pA.getByLabel("Titel", { exact: true }).fill("Keuken basis");
+    await pA.locator('input[type="file"]').setInputFiles({
+      name: "kopie.pdf",
+      mimeType: "application/pdf",
+      buffer: pdf,
+    });
+    await pA
+      .getByText("Dit bestand stond al in je project", { exact: false })
+      .waitFor({ timeout: 30000 });
+    ok(true, "dubbel bestand herkend: het bestaande bestand wordt gebruikt");
+    await pA.getByLabel("Omschrijving regel 1").fill("Keuken incl. apparatuur");
+    await pA
+      .getByLabel("Categorie regel 1")
+      .selectOption({ label: "Afbouw › Keuken" });
+    await pA.getByLabel("Bedrag regel 1").fill("24.900");
+    await pA.getByRole("button", { name: "Offerte opslaan" }).click();
+    await pA.waitForURL(uuidEind("/offertes"), { timeout: 20000 });
+    const offerte2 = idUitUrl(pA);
+    const { data: q2 } = await clientA
+      .from("quotes")
+      .select("file_id, suppliers (name)")
+      .eq("id", offerte2)
+      .single();
+    ok(
+      q2.suppliers?.name === "Keuken & Co" && q2.file_id === q1.file_id,
+      "tweede offerte met nieuwe leverancier en hetzelfde (ene) bestand",
+    );
+
+    // Vergelijken per categorie: goedkoopste eerst.
+    await pA.goto(`${APP}/offertes?weergave=vergelijk`);
+    const vergelijk = pA.getByRole("region", { name: "Afbouw › Keuken" });
+    const rijen = vergelijk.getByRole("listitem");
+    ok(
+      (await rijen.count()) === 2 &&
+        (await rijen.first().innerText()).includes("Keuken & Co") &&
+        (await rijen.first().innerText()).includes("Laagste"),
+      "vergelijking: Keuken & Co (€ 24.900) als laagste boven Keukenstudio Noord",
+    );
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/offertes-vergelijk.png`,
+        fullPage: true,
+      });
+
+    // Offerte 2 afwijzen.
+    await pA.goto(`${APP}/offertes/${offerte2}`);
+    await pA.getByRole("button", { name: "Afwijzen" }).click();
+    await pA
+      .getByRole("button", { name: "Terug naar ontvangen" })
+      .waitFor({ timeout: 20000 });
+    await pA.goto(`${APP}/offertes?status=afgewezen`);
+    ok(
+      (await pA.getByRole("link", { name: /Keuken basis/ }).count()) === 1 &&
+        (await pA.getByRole("link", { name: /Keuken compleet/ }).count()) === 0,
+      "offerte afgewezen; filter op status werkt",
+    );
+
+    // Offerte 1 accepteren → contract.
+    await pA.goto(`${APP}/offertes/${offerte1}`);
+    await pA.getByLabel("Getekend op (optioneel)").fill("20-11-2026");
+    await pA
+      .getByRole("button", { name: "Accepteren en contract maken" })
+      .click();
+    await pA.waitForURL(uuidEind("/contracten"), { timeout: 20000 });
+    const contractId = idUitUrl(pA);
+    const { data: k1 } = await clientA
+      .from("contracts")
+      .select(
+        "quote_id, signed_on, status, supplier_id, contract_lines (amount_incl_cents, category_id)",
+      )
+      .eq("id", contractId)
+      .single();
+    const { data: q1na } = await clientA
+      .from("quotes")
+      .select("status")
+      .eq("id", offerte1)
+      .single();
+    ok(
+      k1.quote_id === offerte1 &&
+        k1.signed_on === "2026-11-20" &&
+        k1.status === "actief" &&
+        k1.supplier_id === leverancierId &&
+        k1.contract_lines
+          .map((l) => l.amount_incl_cents)
+          .sort((a, b) => a - b)
+          .join() === "500000,2135000" &&
+        k1.contract_lines.every((l) => l.category_id === keukenId) &&
+        q1na.status === "geaccepteerd",
+      "offerte geaccepteerd: contract met dezelfde regels, offerte op geaccepteerd",
+    );
+    const dubbel = await clientA.from("contracts").insert({
+      project_id: projectId,
+      quote_id: offerte1,
+      title: "Dubbel",
+    });
+    ok(
+      Boolean(dubbel.error),
+      "een offerte kan maar één keer een contract worden",
+    );
+
+    const tegel = (p, label) =>
+      p
+        .getByRole("region", { name: "Kerncijfers" })
+        .locator("div", { has: p.getByText(label, { exact: true }) })
+        .last();
+    const tegelTekst = async (p, label) =>
+      (await tegel(p, label).innerText()).replace(/\s+/g, " ");
+    await openCategorie(pA, "Keuken");
+    ok(
+      (await tegelTekst(pA, "Prognose")).includes("€ 26.350") &&
+        (await pA.getByRole("link", { name: /Keuken compleet/ }).count()) === 1,
+      "budget Keuken: prognose € 26.350 (contract telt nu mee, één keer)",
+    );
+
+    // Meer- en minderwerk.
+    await pA.goto(`${APP}/contracten/${contractId}`);
+    const wijzigForm = pA.locator("form", { has: pA.getByLabel("Bij regel") });
+    await wijzigForm
+      .getByLabel("Bij regel")
+      .selectOption({ label: "Apparatuur (Afbouw › Keuken)" });
+    await wijzigForm.getByLabel("Omschrijving").fill("Close-in boiler");
+    await wijzigForm.getByLabel("Bedrag incl. BTW").fill("650");
+    await wijzigForm
+      .getByRole("button", { name: "Meer- of minderwerk toevoegen" })
+      .click();
+    await pA
+      .getByText("Toegevoegd als voorstel", { exact: false })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await tegelTekst(pA, "Gecontracteerd")).includes("€ 26.350"),
+      "voorgesteld meerwerk telt nog niet mee",
+    );
+    await pA.getByRole("button", { name: "Akkoord" }).click();
+    await pA
+      .getByRole("button", { name: "Terug naar voorstel" })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await tegelTekst(pA, "Gecontracteerd")).includes("€ 27.000"),
+      "meerwerk na akkoord: gecontracteerd € 27.000",
+    );
+    await wijzigForm
+      .getByLabel("Bij regel")
+      .selectOption({ label: "Keukenblok met werkblad (Afbouw › Keuken)" });
+    await wijzigForm.getByLabel("Omschrijving").fill("Andere grepen");
+    await wijzigForm.getByLabel("Bedrag incl. BTW").fill("-250");
+    await wijzigForm
+      .getByRole("button", { name: "Meer- of minderwerk toevoegen" })
+      .click();
+    await pA
+      .getByRole("button", { name: "Afwijzen" })
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("button", { name: "Afwijzen" }).click();
+    await pA
+      .getByRole("button", { name: "Terug naar voorstel" })
+      .nth(1)
+      .waitFor({ timeout: 20000 });
+    const { data: wijzigingen } = await clientA
+      .from("contract_changes")
+      .select("status, amount_incl_cents, decided_at, decided_by")
+      .order("created_at");
+    ok(
+      wijzigingen.length === 2 &&
+        wijzigingen[0].status === "akkoord" &&
+        wijzigingen[0].amount_incl_cents === 65000 &&
+        wijzigingen[0].decided_by === ids[0] &&
+        wijzigingen[0].decided_at &&
+        wijzigingen[1].status === "afgewezen" &&
+        wijzigingen[1].amount_incl_cents === -25000 &&
+        (await tegelTekst(pA, "Gecontracteerd")).includes("€ 27.000"),
+      "minderwerk afgewezen telt niet mee; besluiten vastgelegd met wie en wanneer",
+    );
+
+    // Termijnschema 30% / 70%.
+    const termijnForm = pA.locator("form", {
+      has: pA.getByPlaceholder("Bijv. bij start bouw"),
+    });
+    const termijn = async (omschrijving, percentage, datum) => {
+      await termijnForm.getByLabel("Omschrijving").fill(omschrijving);
+      await termijnForm
+        .getByLabel("Percentage", { exact: true })
+        .fill(percentage);
+      if (datum)
+        await termijnForm.getByLabel("Verwacht (optioneel)").fill(datum);
+      await termijnForm
+        .getByRole("button", { name: "Termijn toevoegen" })
+        .click();
+    };
+    await termijn("Aanbetaling", "30", "01-12-2026");
+    await pA.locator("ol").getByText("€ 8.100,00").waitFor({ timeout: 20000 });
+    await termijn("Bij oplevering", "70");
+    await pA.locator("ol").getByText("€ 18.900,00").waitFor({ timeout: 20000 });
+    ok(
+      (await pA.locator("p", { hasText: "Ingepland" }).innerText())
+        .replace(/\s+/g, " ")
+        .includes("€ 27.000,00 van € 27.000,00 (100%)"),
+      "termijnen 30% + 70% = € 8.100 + € 18.900 = het hele contract",
+    );
+    await termijn("Extra", "10");
+    await pA
+      .getByText("Het termijnschema is al 100%.")
+      .waitFor({ timeout: 20000 });
+    ok(true, "termijnschema kan niet boven 100% uitkomen");
+
+    // Ruimte bij een contractregel.
+    await pA.getByRole("button", { name: "Ruimtes regel 1" }).click();
+    await pA.getByLabel("Keuken", { exact: true }).check();
+    await pA.getByRole("button", { name: "Ruimtes opslaan" }).click();
+    // Tijdens het opslaan heet de knop "Opslaan…"; wacht daarom tot het
+    // hele paneel dicht is (dat gebeurt pas na succes).
+    await pA
+      .getByRole("group", { name: "Ruimtes" })
+      .waitFor({ state: "detached", timeout: 20000 });
+    const { data: verdeling, error: verdelingFout } = await clientA
+      .from("room_allocations")
+      .select("share_bp, rooms (name)")
+      .not("contract_line_id", "is", null);
+    ok(
+      verdeling.length === 1 &&
+        verdeling[0].share_bp === 10000 &&
+        verdeling[0].rooms?.name === "Keuken",
+      `contractregel aan de ruimte Keuken gekoppeld (100%)${verdeling?.length === 1 && verdeling[0].share_bp === 10000 && verdeling[0].rooms?.name === "Keuken" ? "" : ` — kreeg ${JSON.stringify(verdeling)} ${verdelingFout?.message ?? ""}`}`,
+    );
+    if (SCREENSHOTS) {
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/contract-detail.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 390, height: 844 });
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/contract-mobiel.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 1440, height: 900 });
+    }
+
+    // Status: afgerond (prognose = gefactureerd) en weer actief.
+    await pA.getByLabel(/^Afgerond/).check();
+    const statusWaarschuwing = pA.getByText(
+      /Dat bedrag telt daarna niet meer mee/,
+    );
+    await statusWaarschuwing.waitFor({ timeout: 20000 });
+    ok(
+      (await statusWaarschuwing.innerText())
+        .replace(/\s+/g, " ")
+        .includes("Er staat nog € 27.000 te factureren"),
+      "afronden waarschuwt dat het nog niet gefactureerde deel uit de prognose valt",
+    );
+    await pA.getByRole("button", { name: "Status opslaan" }).click();
+    await pA.getByText("Status bijgewerkt.").waitFor({ timeout: 20000 });
+    await openCategorie(pA, "Keuken");
+    ok(
+      (await tegelTekst(pA, "Prognose")).includes("€ 25.000"),
+      "contract afgerond zonder facturen: Keuken valt terug op het budget",
+    );
+    await pA.goto(`${APP}/contracten/${contractId}`);
+    await pA.getByLabel(/^Actief/).check();
+    await pA.getByRole("button", { name: "Status opslaan" }).click();
+    await pA.getByText("Status bijgewerkt.").waitFor({ timeout: 20000 });
+    const { data: statusLog } = await clientA
+      .from("activity_log")
+      .select("changes")
+      .eq("record_id", contractId)
+      .eq("action", "contract_status")
+      .order("created_at");
+    ok(
+      statusLog.length === 2 &&
+        statusLog[0].changes.naar === "afgerond" &&
+        statusLog[1].changes.naar === "actief",
+      "statuswijzigingen vastgelegd in het activiteitenlog",
+    );
+
+    // Contract zonder offerte: categorie verplicht; daarna weer verwijderen.
+    await pA.goto(`${APP}/contracten/nieuw`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption("__nieuw__");
+    await pA
+      .getByLabel("Naam nieuwe leverancier")
+      .fill("Installatiebedrijf Oost");
+    await pA
+      .getByLabel("Naam van het contract")
+      .fill("Extra groepen meterkast");
+    await pA.getByLabel("Omschrijving regel 1").fill("Groepenkast uitbreiden");
+    await pA.getByLabel("Bedrag regel 1").fill("1.850");
+    await pA.getByRole("button", { name: "Contract opslaan" }).click();
+    await pA
+      .getByText("Kies bij regel 1 een categorie.")
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA.getByLabel("Naam van het contract").inputValue()) ===
+        "Extra groepen meterkast",
+      "contract zonder categorie geweigerd; ingevulde gegevens blijven staan",
+    );
+    await pA
+      .getByLabel("Categorie regel 1")
+      .selectOption({ label: "Afbouw › Verlichting & elektra" });
+    await pA.getByRole("button", { name: "Contract opslaan" }).click();
+    await pA.waitForURL(uuidEind("/contracten"), { timeout: 20000 });
+    const handmatig = idUitUrl(pA);
+    await pA.getByLabel(/Ja, verwijder/).check();
+    await pA.getByRole("button", { name: "Contract verwijderen" }).click();
+    await pA.waitForURL(`${APP}/contracten`, { timeout: 20000 });
+    const { count: weg } = await clientA
+      .from("contracts")
+      .select("id", { count: "exact", head: true })
+      .eq("id", handmatig);
+    ok(weg === 0, "contract zonder offerte aangemaakt en weer verwijderd");
+    await pA.reload();
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/contracten.png`,
+        fullPage: true,
+      });
+
+    // Afgewezen offerte verwijderen: het gedeelde bestand blijft bewaard.
+    await pA.goto(`${APP}/offertes/${offerte2}`);
+    await pA.getByLabel(/Ja, verwijder/).check();
+    await pA.getByRole("button", { name: "Offerte verwijderen" }).click();
+    await pA.waitForURL(`${APP}/offertes`, { timeout: 20000 });
+    const { data: bestanden } = await clientA
+      .from("files")
+      .select("id, storage_path");
+    const opslagInfo = await clientA.storage
+      .from("documenten")
+      .info(bestanden?.[0]?.storage_path ?? "");
+    ok(
+      bestanden.length === 1 &&
+        bestanden[0].id === q1.file_id &&
+        !opslagInfo.error,
+      "offerte verwijderd; het bestand van de andere offerte blijft bewaard",
+    );
+    const bestandPad = bestanden[0].storage_path;
+
+    // B ziet hetzelfde contract en dezelfde offerte (met PDF).
+    await pB.goto(`${APP}/contracten/${contractId}`);
+    await pB
+      .getByRole("heading", { level: 1, name: "Keuken compleet" })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await tegelTekst(pB, "Gecontracteerd")).includes("€ 27.000") &&
+        (await pB.getByText("Close-in boiler").count()) === 1,
+      "B ziet hetzelfde contract, meerwerk en bedragen",
+    );
+    await pB.goto(`${APP}/offertes/${offerte1}`);
+    const linkB = await pB.locator("iframe").getAttribute("src");
+    ok((await fetch(linkB)).ok, "B kan de PDF van de offerte bekijken");
+
+    // C ziet niets: niet in de app, niet via de opslag.
+    for (const pad of [`/contracten/${contractId}`, `/offertes/${offerte1}`]) {
+      await pC.goto(`${APP}${pad}`);
+      await pC.waitForURL("**/welkom", { timeout: 20000 });
+    }
+    ok(true, "C ziet het contract en de offerte van A niet");
+    const cLink = await clientC.storage
+      .from("documenten")
+      .createSignedUrl(bestandPad, 60);
+    const cDownload = await clientC.storage
+      .from("documenten")
+      .download(bestandPad);
+    ok(
+      Boolean(cLink.error) && Boolean(cDownload.error),
+      "C kan het bestand niet openen of downloaden",
+    );
+
     // B ziet hetzelfde budget; C helemaal niets.
     await pB.goto(`${APP}/budget`);
     await pB.getByText("€ 25.000").first().waitFor({ timeout: 20000 });
@@ -517,6 +1038,14 @@ async function main() {
       "rooms",
       "suppliers",
       "profiles",
+      "files",
+      "quotes",
+      "quote_lines",
+      "contracts",
+      "contract_lines",
+      "contract_changes",
+      "contract_installments",
+      "room_allocations",
     ];
     const zicht = async (c) => {
       const uit = {};
@@ -531,14 +1060,20 @@ async function main() {
     const zichtB = await zicht(clientB);
     ok(
       JSON.stringify(zichtA) === JSON.stringify(zichtB),
-      "A en B zien exact dezelfde gegevens (project, leden, categorieën, budget, ruimtes, leveranciers, profielen)",
+      "A en B zien exact dezelfde gegevens (project, leden, budget, ruimtes, leveranciers, bestanden, offertes, contracten, meerwerk, termijnen)",
     );
     ok(
       zichtA.categories.some((c) => c.name === "API-categorie") &&
-        zichtA.suppliers.length === 1 &&
+        zichtA.suppliers.length === 4 &&
         zichtA.budget_lines.length === 2 &&
-        zichtA.rooms.length === 12,
-      "alle toevoegingen zichtbaar (ook budget en ruimtes)",
+        zichtA.rooms.length === 12 &&
+        zichtA.quotes.length === 1 &&
+        zichtA.contracts.length === 1 &&
+        zichtA.contract_lines.length === 2 &&
+        zichtA.contract_changes.length === 2 &&
+        zichtA.contract_installments.length === 2 &&
+        zichtA.files.length === 1,
+      "alle toevoegingen zichtbaar (budget, ruimtes, offertes, contracten)",
     );
 
     const zichtC = await zicht(clientC);
@@ -549,6 +1084,14 @@ async function main() {
         zichtC.budget_lines.length === 0 &&
         zichtC.rooms.length === 0 &&
         zichtC.suppliers.length === 0 &&
+        zichtC.files.length === 0 &&
+        zichtC.quotes.length === 0 &&
+        zichtC.quote_lines.length === 0 &&
+        zichtC.contracts.length === 0 &&
+        zichtC.contract_lines.length === 0 &&
+        zichtC.contract_changes.length === 0 &&
+        zichtC.contract_installments.length === 0 &&
+        zichtC.room_allocations.length === 0 &&
         zichtC.profiles.length === 1,
       "C ziet niets van het project (alleen het eigen profiel)",
     );
@@ -585,6 +1128,18 @@ async function main() {
   } finally {
     console.log("→ Opruimen");
     if (browser) await browser.close();
+    if (projectId) {
+      // Bestanden in de opslag worden niet automatisch met het project
+      // verwijderd: eerst de map van het project leegmaken.
+      const { data: objecten } = await admin.storage
+        .from("documenten")
+        .list(projectId, { limit: 1000 });
+      if (objecten?.length) {
+        await admin.storage
+          .from("documenten")
+          .remove(objecten.map((o) => `${projectId}/${o.name}`));
+      }
+    }
     if (clientA && projectId) {
       await clientA.from("projects").delete().eq("id", projectId);
     }
@@ -595,10 +1150,15 @@ async function main() {
     }
     const rest = await sql(`
       select (select count(*) from auth.users where email like 'e2e-%-${sfx}@example.com') as accounts,
-             (select count(*) from public.projects where name = 'E2E-project ${sfx}') as projecten`);
+             (select count(*) from public.projects where name = 'E2E-project ${sfx}') as projecten,
+             (select count(*) from storage.objects
+               where bucket_id = 'documenten'
+                 and name like '${projectId ?? "geen-project"}/%') as bestanden`);
     ok(
-      Number(rest[0].accounts) === 0 && Number(rest[0].projecten) === 0,
-      "testaccounts en testproject volledig verwijderd",
+      Number(rest[0].accounts) === 0 &&
+        Number(rest[0].projecten) === 0 &&
+        Number(rest[0].bestanden) === 0,
+      "testaccounts, testproject en bestanden volledig verwijderd",
     );
   }
 

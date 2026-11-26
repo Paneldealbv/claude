@@ -1,6 +1,6 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 4 · 26-11-2026 · fase 3: uitwerking van de rekenlogica in code (§ 3.9–3.10).
+Versie 5 · 26-11-2026 · fase 5: offertes, contracten en bestanden (§ 3.11–3.12).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -264,6 +264,7 @@ voorbeeld uit dit document is een unit test.
 | `verdeel.ts`      | Verdelen naar rato met de grootste-restmethode (exact tot op de cent)                                     |
 | `bereken.ts`      | `berekenProject()`: contracten, categorieën, projecttotalen, financiering, ruimtes, termijnen, documenten |
 | `afsluiten.ts`    | `controleerAfsluiten()`: controlelijst vóór het afsluiten van een categorie                               |
+| `wat-als.ts`      | `metExtraContract()`: de prognose alsof een offerte al is geaccepteerd (voorbeeld vóór het besluit)       |
 | `uit-database.ts` | Databaserijen → invoer van de rekenlogica                                                                 |
 | `*.test.ts`       | Voorbeelden uit dit document, plus invarianten op 300 willekeurige projecten                              |
 
@@ -297,6 +298,62 @@ Keuzes die bij het programmeren concreet zijn gemaakt:
   categorie zonder budget, meer betaald dan het documenttotaal.
 - **Datums** worden overal ingevoerd als DD-MM-JJJJ (`components/ui/datum-veld.tsx`),
   ongeacht de taal van de browser, en als ISO (JJJJ-MM-DD) opgeslagen.
+
+### 3.11 Offertes en contracten (vastgelegd in fase 5)
+
+- **Een offerte telt nooit mee.** Pas bij **accepteren** ontstaat een contract
+  (status actief) met precies dezelfde regels; de offerte krijgt de status
+  "geaccepteerd" en is daarna niet meer te wijzigen. Eén offerte wordt hooguit
+  één contract (unieke index op `contracts.quote_id`), dus dubbel accepteren
+  kan niet.
+- **Accepteren vraagt een categorie op elke regel**: een contract telt mee in
+  het budget per categorie. Vóór het besluit toont de offertepagina het
+  **effect op de prognose** per categorie en voor het hele project
+  (`metExtraContract()` + `berekenProject()`). Valt een offerte binnen het
+  budget van een open categorie, dan blijft de prognose gelijk aan het budget
+  (§ 3.4).
+- **Vergelijken** gebeurt per categorie: per offerte de som van haar regels in
+  die categorie, goedkoopste eerst, met het verschil ten opzichte van het
+  budget. Afgewezen en verlopen offertes doen niet mee.
+- **Contract zonder offerte** (bijv. een mondelinge afspraak) kan ook; elke
+  regel heeft dan meteen een categorie.
+- **Meer- en minderwerk** hoort bij een contractregel. Een voorstel telt niet
+  mee; na **akkoord** telt het mee in C(l) (§ 3.3), afgewezen telt niet. Wie en
+  wanneer besliste, wordt vastgelegd. Goedgekeurd werk kan niet zomaar worden
+  verwijderd: eerst terug naar "voorstel", zodat een toezegging nooit
+  ongemerkt uit de prognose verdwijnt.
+- **Termijnschema**: per termijn een percentage van het contract (inclusief
+  goedgekeurd meer-/minderwerk) of een vast bedrag. Percentages samen hooguit
+  100%. Termijnen verdelen het contractbedrag en tellen dus nooit extra mee;
+  termijnfacturen (fase 6) worden eraan gekoppeld.
+- **Status**: actief (prognose minimaal het contractbedrag), afgerond
+  (prognose = gefactureerd; de app waarschuwt als er nog iets te factureren
+  staat) of geannuleerd (alleen wat al gefactureerd is telt; vraagt om
+  bevestiging). Elke statuswijziging en elke geaccepteerde offerte staat in het
+  activiteitenlog.
+- **Contract verwijderen** kan alleen zolang er geen facturen of bonnen aan
+  hangen (anders: annuleren). Een gekoppelde offerte gaat dan terug naar
+  "ontvangen".
+- **Ruimtes per contractregel**: gelijk verdeeld over de gekozen ruimtes
+  (grootste-restmethode in basispunten, samen precies 100%, gecontroleerd door
+  de database).
+
+### 3.12 Bestanden (vastgelegd in fase 5)
+
+- Uploaden gaat **rechtstreeks van de browser naar de privé opslag**, met een
+  eenmalige uploadlink die de server alleen aan projectleden geeft. Zo geldt
+  de limiet van 4,5 MB per verzoek bij Vercel niet; de grens is 20 MB.
+- Toegestaan: PDF, JPG, PNG, WebP en HEIC. De server controleert na het
+  uploaden grootte en type van het opgeslagen bestand en registreert het pas
+  daarna in `files`.
+- **Elk origineel één keer**: de browser berekent een SHA-256; staat hetzelfde
+  bestand al in het project, dan wordt het bestaande gebruikt. Een bestand
+  wordt pas verwijderd als niets er meer naar verwijst.
+- Bekijken gaat via een **tijdelijke link (1 uur)** die per paginabezoek wordt
+  gemaakt; alleen projectleden krijgen die. Bestanden staan per project in een
+  eigen map (`<project-id>/…`), afgeschermd door de opslagregels.
+- Nog te doen (fase 10): bestanden opruimen van projecten die worden
+  verwijderd (bijv. als het laatste lid zijn account opheft).
 
 ---
 
@@ -440,16 +497,16 @@ Leveranciers, Meer) met een centrale **"+"-knop** voor "Bon/factuur toevoegen".
 
 Na elke fase: testen, committen, pushen en wachten op feedback.
 
-| Fase                                  | Inhoud                                                                                                                       |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 0. Fundament ✓                        | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
-| 1. Ontwerp-shell ✓                    | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
-| 2. Supabase + inloggen ✓              | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
-| 3. Datamodel + rekenlogica ✓          | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
-| 4. Categorieën, ruimtes, budget ✓     | Beheer en budgetpagina                                                                                                       |
-| 5. Leveranciers, offertes, contracten | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
-| 6. Documenten en betalingen           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
-| 7. Dashboard en rapportages           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
-| 8. AI-documentherkenning              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
-| 9. Financiering                       | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
-| 10. Afronding                         | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
+| Fase                                    | Inhoud                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 0. Fundament ✓                          | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
+| 1. Ontwerp-shell ✓                      | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
+| 2. Supabase + inloggen ✓                | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
+| 3. Datamodel + rekenlogica ✓            | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
+| 4. Categorieën, ruimtes, budget ✓       | Beheer en budgetpagina                                                                                                       |
+| 5. Leveranciers, offertes, contracten ✓ | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
+| 6. Documenten en betalingen             | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
+| 7. Dashboard en rapportages             | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
+| 8. AI-documentherkenning                | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
+| 9. Financiering                         | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
+| 10. Afronding                           | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
