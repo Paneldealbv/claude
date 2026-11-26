@@ -64,11 +64,12 @@ alter table storage.objects enable row level security;
 alter table storage.buckets enable row level security;
 grant all on storage.objects, storage.buckets to anon, authenticated, service_role;
 
--- Supabase-standaard: alle rollen krijgen rechten op public; RLS beschermt.
+-- Standaardrechten zoals in een NIEUW Supabase-project (gecontroleerd op het
+-- live project, eu-central-1, 26-11-2026): tabellen die 'postgres' aanmaakt
+-- krijgen voor authenticated/service_role alleen TRUNCATE, REFERENCES en
+-- TRIGGER; geen lees- of schrijfrechten. Functies en sequences krijgen geen
+-- rechten voor andere rollen. Migraties moeten dus zelf expliciet rechten geven.
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public
-  grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public
-  grant all on sequences to anon, authenticated, service_role;
-alter default privileges in schema public
-  grant execute on functions to anon, authenticated, service_role;
+  grant truncate, references, trigger on tables to authenticated, service_role;
+alter default privileges in schema public revoke execute on functions from public;

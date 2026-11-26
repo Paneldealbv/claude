@@ -16,7 +16,7 @@ export default async function InloggenPagina({
       ? ({
           soort: "fout",
           tekst:
-            "Deze link is verlopen of al gebruikt. Log in of vraag een nieuwe link aan.",
+            "Deze link kon niet worden verwerkt. Heb je je account bevestigd? Dan is dat waarschijnlijk gelukt: log hieronder in. Open links uit e-mails bij voorkeur op hetzelfde apparaat en in dezelfde browser waarmee je ze hebt aangevraagd.",
         } as const)
       : undefined;
 

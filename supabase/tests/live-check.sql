@@ -28,6 +28,12 @@ begin
   if n > 0 then raise exception 'MISLUKT: anon heeft % tabelrechten', n; end if;
   ok := array_append(ok, 'anon heeft geen tabelrechten');
 
+  select count(*) into n from information_schema.role_table_grants
+  where grantee = 'authenticated' and table_schema = 'public'
+    and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER');
+  if n > 0 then raise exception 'MISLUKT: authenticated heeft % TRUNCATE/TRIGGER-rechten', n; end if;
+  ok := array_append(ok, 'geen TRUNCATE/TRIGGER voor ingelogde gebruikers');
+
   select count(*) into n from storage.buckets where id = 'documenten' and not public;
   if n <> 1 then raise exception 'MISLUKT: privé bucket documenten ontbreekt'; end if;
   ok := array_append(ok, 'privé bucket documenten');

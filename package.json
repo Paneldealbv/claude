@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:db": "bash supabase/tests/run-local.sh",
-    "supabase": "node scripts/supabase-beheer.mjs"
+    "supabase": "node scripts/supabase-beheer.mjs",
+    "test:e2e": "node scripts/e2e-live.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

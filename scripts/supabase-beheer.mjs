@@ -214,6 +214,15 @@ function authConfig() {
     mailer_autoconfirm: false,
     password_min_length: 10,
     security_update_password_require_reauthentication: false,
+  };
+}
+
+/**
+ * Nederlandse e-mails. Op het gratis plan alleen mogelijk met een eigen
+ * mailserver (SMTP); daarom apart: `auth --met-emails`.
+ */
+function emailTemplates() {
+  return {
     mailer_subjects_confirmation: "Bevestig je e-mailadres",
     mailer_templates_confirmation_content: mail(
       "Bevestig je e-mailadres",
@@ -243,7 +252,8 @@ function authConfig() {
 
 async function auth() {
   await project();
-  const config = authConfig();
+  const metEmails = vlaggen.includes("--met-emails");
+  const config = { ...authConfig(), ...(metEmails ? emailTemplates() : {}) };
   console.log("\nAuth-instellingen:");
   console.log(`  Site URL:           ${config.site_url}`);
   console.log(
@@ -252,7 +262,7 @@ async function auth() {
   console.log(`  E-mail bevestigen:  verplicht`);
   console.log(`  Min. wachtwoord:    ${config.password_min_length} tekens`);
   console.log(
-    `  E-mails:            Nederlands (bevestigen, wachtwoord, e-mail wijzigen)`,
+    `  E-mails:            ${metEmails ? "Nederlands (bevestigen, wachtwoord, e-mail wijzigen)" : "standaard van Supabase (Nederlands vereist eigen SMTP: --met-emails)"}`,
   );
   if (droog) return console.log("\n(droog: er is niets gewijzigd)");
   await api(`/projects/${REF}/config/auth`, { method: "PATCH", body: config });

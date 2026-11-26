@@ -6,7 +6,7 @@ import {
   UitnodigenFormulier,
 } from "@/components/project/formulieren";
 import { Card, CardHeader } from "@/components/ui/card";
-import { knopKlassen } from "@/components/ui/form";
+import { knopKlassen } from "@/components/ui/knop";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill } from "@/components/ui/status";
 import {

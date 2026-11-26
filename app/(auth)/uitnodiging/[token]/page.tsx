@@ -2,7 +2,8 @@ import { Mail } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { UitnodigingAccepterenFormulier } from "@/components/project/formulieren";
-import { knopKlassen, Melding } from "@/components/ui/form";
+import { Melding } from "@/components/ui/form";
+import { knopKlassen } from "@/components/ui/knop";
 import { createClient } from "@/lib/supabase/server";
 import { AuthKop } from "../../kop";
 

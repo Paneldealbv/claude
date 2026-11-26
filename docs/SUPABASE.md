@@ -66,7 +66,8 @@ in de code of in GitHub.
 ## Tests
 
 `npm run test:db` start een tijdelijke Postgres, bootst de Supabase-rollen
-na, voert alle migraties uit en controleert 85 punten, waaronder:
+na (inclusief de strengere standaardrechten van nieuwe Supabase-projecten),
+voert alle migraties uit en controleert 93 punten, waaronder:
 
 - A (eigenaar), B (bewerker) en D (lezer) zien **exact dezelfde gegevens**
   in alle tabellen;
@@ -75,11 +76,44 @@ na, voert alle migraties uit en controleert 85 punten, waaronder:
 - niet-ingelogd: geen toegang tot tabellen en bestanden;
 - uitnodigingen: één keer bruikbaar, verloopt, alleen voor het juiste en
   bevestigde e-mailadres;
-- alle financiële controles uit de architectuur.
+- alle financiële controles uit de architectuur;
+- ingelogde gebruikers kunnen geen tabel leegmaken (TRUNCATE) en geen
+  technische kolommen (id, project_id, created_by) wijzigen;
+- account verwijderen als laatste eigenaar: een ander lid wordt eigenaar, of
+  het project wordt opgeruimd als er geen leden meer zijn.
+
+Daarnaast:
+
+- **Live-controle** (`npm run supabase -- livetest`): 9 controles op de echte
+  database in één transactie die altijd wordt teruggedraaid.
+- **End-to-end** (`npm run test:e2e`): drie tijdelijke accounts doorlopen de
+  echte app (inloggen, project aanmaken, uitnodigen, accepteren) en de API;
+  20 controles. Accounts en project worden daarna volledig verwijderd.
+
+## Rechten in een nieuw Supabase-project
+
+Nieuwe Supabase-projecten geven ingelogde gebruikers standaard **geen** lees-
+of schrijfrechten op nieuwe tabellen. Migratie `0009_rechten` geeft per tabel
+precies wat de app nodig heeft. **Een nieuwe tabel in een latere migratie moet
+daarom altijd ook expliciete `grant`s krijgen**; de lokale test controleert
+dat elke tabel leesbaar is gemaakt (RLS filtert daarna de rijen).
+
+## E-mail
+
+Op het gratis plan met de standaard mailserver van Supabase:
+
+- maximaal **2 e-mails per uur** voor het hele project (bevestigen en
+  wachtwoord herstellen samen);
+- de e-mailteksten zijn Engelstalig en niet aan te passen.
+
+Nederlandse e-mails en hogere limieten kunnen later met een eigen
+mailserver (bijv. Resend of Brevo, gratis te starten):
+`npm run supabase -- auth --met-emails` na het instellen van SMTP.
 
 ## Online zetten (Vercel)
 
-1. vercel.com → **Add New → Project** → kies de GitHub-repository.
+1. vercel.com → **Add New → Project** → kies de GitHub-repository en de
+   branch met deze code.
 2. Bij **Environment Variables**:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
    `NEXT_PUBLIC_SITE_URL` (het Vercel-adres, bijv. `https://nieuwbouw-dashboard.vercel.app`).

@@ -118,6 +118,21 @@ select test.ok(not exists (
   select 1 from information_schema.role_table_grants
   where grantee = 'anon' and table_schema = 'public'),
   'niet-ingelogde bezoekers hebben op geen enkele tabel rechten');
+select test.ok(not exists (
+  select 1 from information_schema.role_table_grants
+  where grantee = 'authenticated' and table_schema = 'public'
+    and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')),
+  'ingelogde gebruikers kunnen geen tabel leegmaken (TRUNCATE) of triggers maken');
+select test.ok(not exists (
+  select 1 from pg_tables t where t.schemaname = 'public'
+    and not has_table_privilege('authenticated', format('%I.%I', t.schemaname, t.tablename), 'select')),
+  'elke tabel is expliciet leesbaar gemaakt voor ingelogde gebruikers (RLS filtert)');
+select test.ok(not exists (
+  select 1 from information_schema.column_privileges
+  where grantee = 'authenticated' and table_schema = 'public'
+    and privilege_type = 'UPDATE'
+    and column_name in ('id', 'project_id', 'created_by', 'created_at')),
+  'technische kolommen (id, project_id, created_by, created_at) zijn niet te wijzigen');
 
 -- -----------------------------------------------------------------------------
 -- Gebruikers
@@ -284,6 +299,13 @@ insert into public.document_extractions (project_id, file_id, status)
 values (:'pid', :'file', 'te_controleren');
 
 insert into public.activity_log (project_id, action) values (:'pid', 'test');
+
+-- created_by kan niet vervalst worden.
+insert into public.rooms (project_id, name, created_by)
+values (:'pid', 'Berging', :'B') returning created_by as cb \gset
+select test.ok(:'cb' = :'A', 'created_by is altijd de ingelogde gebruiker (niet te vervalsen)');
+select test.faalt($$update public.rooms set project_id = '$$ || :'pid' || $$'$$,
+  'project_id van een bestaande rij kan niet worden gewijzigd');
 
 -- =============================================================================
 -- 3. Zichtbaarheid: A en B zien hetzelfde, C niets, D (lezer) hetzelfde
@@ -538,5 +560,36 @@ select test.ok(
   and (select count(*) from public.project_members) = 0
   and (select count(*) from public.categories) = 0,
   'na verwijderen blijven geen gegevens achter');
+
+-- =============================================================================
+-- 9. Account verwijderen
+-- =============================================================================
+insert into auth.users (id, email, email_confirmed_at) values
+  ('00000000-0000-0000-0000-0000000000f1', 'f@test.nl', now()),
+  ('00000000-0000-0000-0000-0000000000f2', 'g@test.nl', now()),
+  ('00000000-0000-0000-0000-0000000000f3', 'h@test.nl', now());
+
+-- F is eigenaar, G is lid; H heeft een project alleen.
+select test.als('00000000-0000-0000-0000-0000000000f1');
+select public.create_project('Project F') as pid_f \gset
+select token as tok_g from public.create_invite(:'pid_f', 'g@test.nl', 'lezer') \gset
+select test.als('00000000-0000-0000-0000-0000000000f2');
+select public.accept_invite(:'tok_g');
+select test.als('00000000-0000-0000-0000-0000000000f3');
+select public.create_project('Project H') as pid_h \gset
+select test.als('00000000-0000-0000-0000-0000000000f1');
+select test.faalt($$delete from public.project_members
+  where user_id = '00000000-0000-0000-0000-0000000000f1'$$,
+  'laatste eigenaar kan zichzelf nog steeds niet verwijderen zolang het account bestaat');
+reset role;
+
+delete from auth.users where id = '00000000-0000-0000-0000-0000000000f1';
+select test.ok((select role from public.project_members
+                where project_id = :'pid_f' and user_id = '00000000-0000-0000-0000-0000000000f2') = 'eigenaar',
+  'account van laatste eigenaar verwijderd: ander lid wordt eigenaar');
+
+delete from auth.users where id = '00000000-0000-0000-0000-0000000000f3';
+select test.ok(not exists (select 1 from public.projects where id = :'pid_h'),
+  'account van enige lid verwijderd: project wordt opgeruimd');
 
 \warn 'Alle beveiligingstests geslaagd.'
