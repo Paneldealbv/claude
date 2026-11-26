@@ -25,3 +25,27 @@ export const STATUS_TERMIJN = {
   deels: { tekst: "Deels gefactureerd", soort: "waarschuwing" },
   gefactureerd: { tekst: "Gefactureerd", soort: "positief" },
 } as const satisfies Record<string, { tekst: string; soort: Soort }>;
+
+export const DOCUMENT_TYPE = {
+  factuur: { tekst: "Factuur", meervoud: "Facturen" },
+  termijnfactuur: { tekst: "Termijnfactuur", meervoud: "Termijnfacturen" },
+  eindfactuur: { tekst: "Eindfactuur", meervoud: "Eindfacturen" },
+  creditnota: { tekst: "Creditnota", meervoud: "Creditnota's" },
+  bon: { tekst: "Bon", meervoud: "Bonnen" },
+} as const;
+
+export type DocumentSoort = keyof typeof DOCUMENT_TYPE;
+
+export const STATUS_DOCUMENT = {
+  concept: { tekst: "Concept", soort: "neutraal" },
+  te_controleren: { tekst: "Te controleren", soort: "waarschuwing" },
+  geboekt: { tekst: "Geboekt", soort: "positief" },
+  vervallen: { tekst: "Vervallen", soort: "neutraal" },
+} as const satisfies Record<string, { tekst: string; soort: Soort }>;
+
+export const BETAALSTATUS = {
+  open: { tekst: "Open", soort: "info" },
+  deels: { tekst: "Deels betaald", soort: "waarschuwing" },
+  betaald: { tekst: "Betaald", soort: "positief" },
+  te_laat: { tekst: "Te laat", soort: "kritiek" },
+} as const satisfies Record<string, { tekst: string; soort: Soort }>;

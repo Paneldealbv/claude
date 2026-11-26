@@ -18,6 +18,7 @@ export function BedragVeld({
   className,
   negatiefToegestaan = false,
   disabled,
+  onWaarde,
 }: {
   label: string;
   naam: string;
@@ -28,6 +29,8 @@ export function BedragVeld({
   className?: string;
   negatiefToegestaan?: boolean;
   disabled?: boolean;
+  /** Meldt het bedrag in centen (of null) bij elke wijziging. */
+  onWaarde?: (centen: number | null) => void;
 }) {
   const id = useId();
   const [tekst, setTekst] = useState(
@@ -68,7 +71,10 @@ export function BedragVeld({
           placeholder="0,00"
           value={tekst}
           disabled={disabled}
-          onChange={(e) => setTekst(e.target.value)}
+          onChange={(e) => {
+            setTekst(e.target.value);
+            onWaarde?.(parseEuro(e.target.value));
+          }}
           onBlur={() => {
             setVerlaten(true);
             if (geldig && centen !== null) setTekst(formatBedragInvoer(centen));

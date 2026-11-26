@@ -3,8 +3,6 @@ import {
   Ban,
   ChevronRight,
   Clock,
-  ExternalLink,
-  FileText,
   Pencil,
   RotateCcw,
   TriangleExclamationPoint,
@@ -12,6 +10,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BestandKaart } from "@/components/bestanden/bestand-kaart";
 import { Afwijking } from "@/components/budget/categorie-tabel";
 import {
   OfferteAccepteren,
@@ -123,11 +122,6 @@ export default async function OffertePagina({
 
   const btwLabel = (bp: number) =>
     BTW_TARIEVEN.find((t) => t.bp === bp)?.label ?? `${bp / 100}%`;
-  const isAfbeelding = bestand?.type.startsWith("image/") ?? false;
-  const toonbaar =
-    bestand?.url &&
-    (bestand.type === "application/pdf" ||
-      (isAfbeelding && !/hei[cf]/.test(bestand.type)));
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -228,66 +222,15 @@ export default async function OffertePagina({
             </dl>
           </Card>
 
-          {/* Document */}
-          <Card aria-labelledby="document-titel" className="overflow-hidden">
-            <CardHeader
-              id="document-titel"
-              title="Document"
-              description={bestand ? bestand.naam : undefined}
-              action={
-                bestand?.url && (
-                  <a
-                    href={bestand.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={knopKlassen("secundair", "px-3 py-2")}
-                  >
-                    <ExternalLink className="size-4" />
-                    Openen
-                  </a>
-                )
-              }
-              className="pb-4"
-            />
-            {bestand ? (
-              toonbaar && bestand.url ? (
-                bestand.type === "application/pdf" ? (
-                  <iframe
-                    src={bestand.url}
-                    title={`Offerte: ${bestand.naam}`}
-                    className="border-border h-[70vh] min-h-[420px] w-full border-t"
-                  />
-                ) : (
-                  // Tijdelijke, persoonlijke link uit de privé opslag; geen
-                  // beeldoptimalisatie via de server.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={bestand.url}
-                    alt={`Offerte: ${bestand.naam}`}
-                    className="border-border max-h-[70vh] w-full border-t object-contain"
-                  />
-                )
-              ) : (
-                <p className="text-muted border-border border-t px-5 py-4 text-sm sm:px-6">
-                  Dit bestand kan niet in de pagina worden getoond. Gebruik
-                  &quot;Openen&quot; om het te bekijken of te downloaden.
-                </p>
-              )
-            ) : (
-              <p className="text-muted border-border flex items-center gap-2 border-t px-5 py-4 text-sm sm:px-6">
-                <FileText className="size-4 shrink-0" />
-                Geen document bewaard.
-                {magBewerken && !geaccepteerd && (
-                  <Link
-                    href={`/offertes/${id}/bewerken`}
-                    className="text-accent-ink font-medium hover:underline"
-                  >
-                    Toevoegen
-                  </Link>
-                )}
-              </p>
-            )}
-          </Card>
+          <BestandKaart
+            bestand={bestand}
+            omschrijving="Offerte"
+            toevoegenHref={
+              magBewerken && !geaccepteerd
+                ? `/offertes/${id}/bewerken`
+                : undefined
+            }
+          />
         </div>
 
         <div className="min-w-0 space-y-4 lg:col-span-5 lg:space-y-5">

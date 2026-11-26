@@ -57,6 +57,7 @@ export function MobileHeader() {
 
 function Tab({ item, pathname }: { item: NavItem; pathname: string }) {
   const actief = isActive(pathname, item.href);
+  const badge = useShell().badges[item.href] ?? item.badge;
   return (
     <Link
       href={item.href}
@@ -68,9 +69,9 @@ function Tab({ item, pathname }: { item: NavItem; pathname: string }) {
     >
       <span className="relative">
         <item.icon className="size-[22px]" strokeWidth={actief ? 2.25 : 1.75} />
-        {item.badge ? (
+        {badge ? (
           <span className="bg-gold text-gold-foreground absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold">
-            {item.badge}
+            {badge}
           </span>
         ) : null}
       </span>

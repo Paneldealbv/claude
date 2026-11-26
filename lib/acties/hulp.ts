@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getActiefProject, getGebruiker } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { isBtwTarief, vanafInclusief, type BtwTarief } from "@/lib/btw";
 import { isGeldigeIsoDatum } from "@/lib/datum";
 import type { Database } from "@/lib/supabase/database.types";
@@ -133,4 +134,55 @@ export function eersteFouten(error: z.ZodError) {
   const uit: Record<string, string> = {};
   for (const i of error.issues) uit[String(i.path[0] ?? "")] ??= i.message;
   return uit;
+}
+
+/** Verwijdert een bestand als niets er meer naar verwijst. */
+export async function ruimBestandOp(
+  supabase: Db,
+  projectId: string,
+  bestandId: string | null,
+) {
+  if (!bestandId) return;
+  const tel = (tabel: "quotes" | "cost_documents" | "document_extractions") =>
+    supabase
+      .from(tabel)
+      .select("id", { count: "exact", head: true })
+      .eq("file_id", bestandId);
+  const [a, b, c] = await Promise.all([
+    tel("quotes"),
+    tel("cost_documents"),
+    tel("document_extractions"),
+  ]);
+  if ((a.count ?? 0) + (b.count ?? 0) + (c.count ?? 0) > 0) return;
+  const { data: f } = await supabase
+    .from("files")
+    .select("storage_path")
+    .eq("project_id", projectId)
+    .eq("id", bestandId)
+    .maybeSingle();
+  if (!f) return;
+  await supabase.storage.from("documenten").remove([f.storage_path]);
+  await supabase
+    .from("files")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("id", bestandId);
+}
+
+/** Regel in het activiteitenlog van het project. */
+export async function logActie(
+  projectId: string,
+  action: string,
+  tableName: string,
+  recordId: string,
+  changes: Record<string, string | number | null> = {},
+) {
+  const supabase = await createClient();
+  await supabase.from("activity_log").insert({
+    project_id: projectId,
+    action,
+    table_name: tableName,
+    record_id: recordId,
+    changes,
+  });
 }

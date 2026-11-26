@@ -14,6 +14,7 @@ import { DatumVeld } from "@/components/ui/datum-veld";
 import {
   BlijvendFormulier,
   Melding,
+  useActieMetVersie,
   Veld,
   VerzendKnop,
 } from "@/components/ui/form";
@@ -34,27 +35,6 @@ import { cn } from "@/lib/cn";
 import { formatEuro } from "@/lib/format";
 
 const leeg: ActieStatus = {};
-type Actie = (vorige: ActieStatus, formData: FormData) => Promise<ActieStatus>;
-
-/**
- * Actie met een "versie" die ophoogt na succes: geef die als key aan het
- * formulier, dan begint het daarna weer leeg.
- */
-function useActieMetVersie(actie: Actie, naSucces?: () => void) {
-  const [versie, setVersie] = useState(0);
-  const [status, dispatch, bezig] = useActionState(
-    async (vorige: ActieStatus, fd: FormData) => {
-      const uit = await actie(vorige, fd);
-      if (uit.succes) {
-        setVersie((v) => v + 1);
-        naSucces?.();
-      }
-      return uit;
-    },
-    leeg,
-  );
-  return { status, dispatch, bezig, versie };
-}
 
 // -----------------------------------------------------------------------------
 // Nieuw contract

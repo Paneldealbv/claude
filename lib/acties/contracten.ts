@@ -14,6 +14,7 @@ import {
   eersteFouten,
   leesRegels,
   leverancierBepalen,
+  logActie,
   tekst,
 } from "./hulp";
 import type { ActieStatus } from "./project";
@@ -33,23 +34,6 @@ function vernieuw(contractId?: string) {
   revalidatePath("/ruimtes");
   revalidatePath("/dashboard");
   if (contractId) revalidatePath(`/contracten/${contractId}`);
-}
-
-async function logActie(
-  projectId: string,
-  action: string,
-  tableName: string,
-  recordId: string,
-  changes: Record<string, string | number | null> = {},
-) {
-  const supabase = await createClient();
-  await supabase.from("activity_log").insert({
-    project_id: projectId,
-    action,
-    table_name: tableName,
-    record_id: recordId,
-    changes,
-  });
 }
 
 const kopSchema = z.object({

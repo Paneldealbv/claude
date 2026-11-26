@@ -12,8 +12,8 @@ import {
   eersteFouten,
   leesRegels,
   leverancierBepalen,
+  ruimBestandOp,
   tekst,
-  type Db,
 } from "./hulp";
 import type { ActieStatus } from "./project";
 
@@ -37,39 +37,6 @@ const kopSchema = z.object({
   notities: z.string().max(2000, { error: "Maximaal 2000 tekens." }),
   bestandId: z.string().uuid().or(z.literal("")),
 });
-
-/** Verwijdert een bestand als niets er meer naar verwijst. */
-async function ruimBestandOp(
-  supabase: Db,
-  projectId: string,
-  bestandId: string | null,
-) {
-  if (!bestandId) return;
-  const tel = (tabel: "quotes" | "cost_documents" | "document_extractions") =>
-    supabase
-      .from(tabel)
-      .select("id", { count: "exact", head: true })
-      .eq("file_id", bestandId);
-  const [a, b, c] = await Promise.all([
-    tel("quotes"),
-    tel("cost_documents"),
-    tel("document_extractions"),
-  ]);
-  if ((a.count ?? 0) + (b.count ?? 0) + (c.count ?? 0) > 0) return;
-  const { data: f } = await supabase
-    .from("files")
-    .select("storage_path")
-    .eq("project_id", projectId)
-    .eq("id", bestandId)
-    .maybeSingle();
-  if (!f) return;
-  await supabase.storage.from("documenten").remove([f.storage_path]);
-  await supabase
-    .from("files")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("id", bestandId);
-}
 
 // -----------------------------------------------------------------------------
 export async function offerteOpslaan(

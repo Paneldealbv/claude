@@ -38,6 +38,7 @@ function NavLink({
   onNavigate?: () => void;
 }) {
   const actief = isActive(pathname, item.href);
+  const badge = useShell().badges[item.href] ?? item.badge;
   return (
     <Link
       href={item.href}
@@ -60,9 +61,9 @@ function NavLink({
         )}
       />
       <span className="flex-1 truncate">{item.label}</span>
-      {item.badge ? (
+      {badge ? (
         <span className="bg-gold/15 text-gold rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums">
-          {item.badge}
+          {badge}
         </span>
       ) : null}
     </Link>

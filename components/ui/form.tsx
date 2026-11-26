@@ -4,13 +4,16 @@ import { CircleCheck, Loader2, TriangleExclamationPoint } from "lucide-react";
 import {
   createContext,
   startTransition,
+  useActionState,
   useContext,
   useId,
+  useState,
   type ComponentProps,
   type ReactNode,
 } from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
+import type { ActieStatus } from "@/lib/acties/project";
 import { knopKlassen, type KnopVariant } from "./knop";
 
 const BezigContext = createContext(false);
@@ -155,4 +158,27 @@ export function Melding({
       <div className="leading-relaxed">{children}</div>
     </div>
   );
+}
+
+const leeg: ActieStatus = {};
+type Actie = (vorige: ActieStatus, formData: FormData) => Promise<ActieStatus>;
+
+/**
+ * Actie met een "versie" die ophoogt na succes: geef die als key aan het
+ * formulier, dan begint het daarna weer leeg.
+ */
+export function useActieMetVersie(actie: Actie, naSucces?: () => void) {
+  const [versie, setVersie] = useState(0);
+  const [status, dispatch, bezig] = useActionState(
+    async (vorige: ActieStatus, fd: FormData) => {
+      const uit = await actie(vorige, fd);
+      if (uit.succes) {
+        setVersie((v) => v + 1);
+        naSucces?.();
+      }
+      return uit;
+    },
+    leeg,
+  );
+  return { status, dispatch, bezig, versie };
 }

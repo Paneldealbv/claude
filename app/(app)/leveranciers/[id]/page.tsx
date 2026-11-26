@@ -1,4 +1,4 @@
-import { ChevronRight, FileText, Handshake } from "lucide-react";
+import { ChevronRight, FilePlus, FileText, Handshake } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -6,10 +6,12 @@ import {
   LeverancierFormulier,
   LeverancierVerwijderen,
 } from "@/components/leveranciers/formulieren";
+import { DocumentLijst } from "@/components/documenten/lijst";
 import { Card, CardHeader } from "@/components/ui/card";
 import { knopKlassen } from "@/components/ui/knop";
 import { StatusPill } from "@/components/ui/status";
 import { getActiefProject } from "@/lib/auth";
+import { documentOverzicht } from "@/lib/data/documenten";
 import { laadLeveranciers, laadOffertes } from "@/lib/data/offertes";
 import { laadProjectResultaat } from "@/lib/data/project";
 import { STATUS_CONTRACT, STATUS_OFFERTE } from "@/lib/labels";
@@ -31,11 +33,13 @@ export default async function LeverancierPagina({
 }: PageProps<"/leveranciers/[id]">) {
   const { id } = await params;
   const project = await getActiefProject();
-  const [leveranciers, offertes, { invoer, resultaat }] = await Promise.all([
-    laadLeveranciers(project.id),
-    laadOffertes(project.id),
-    laadProjectResultaat(project.id),
-  ]);
+  const [leveranciers, offertes, { invoer, resultaat }, alleDocumenten] =
+    await Promise.all([
+      laadLeveranciers(project.id),
+      laadOffertes(project.id),
+      laadProjectResultaat(project.id),
+      documentOverzicht(project.id),
+    ]);
   const leverancier = leveranciers.find((l) => l.id === id);
   if (!leverancier) notFound();
   const magBewerken = project.rol !== "lezer";
@@ -45,9 +49,10 @@ export default async function LeverancierPagina({
   );
   const contracten = resultaat.contracten.filter((c) => contractIds.has(c.id));
   const eigenOffertes = offertes.filter((o) => o.leverancierId === id);
-  const som = (
-    veld: "gecontracteerd" | "gefactureerd" | "betaald" | "prognose",
-  ) => contracten.reduce((a, c) => a + c[veld], 0);
+  const documenten = alleDocumenten.filter((d) => d.leverancierId === id);
+  const geboekt = documenten.filter((d) => d.status === "geboekt");
+  const somDoc = (veld: "totaal" | "betaald" | "openstaand") =>
+    geboekt.reduce((a, d) => a + d[veld], 0);
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -81,6 +86,13 @@ export default async function LeverancierPagina({
               <Handshake className="size-4" />
               Nieuw contract
             </Link>
+            <Link
+              href={`/documenten/nieuw?leverancier=${id}`}
+              className={knopKlassen("secundair")}
+            >
+              <FilePlus className="size-4" />
+              Nieuwe factuur
+            </Link>
           </div>
         )}
       </div>
@@ -91,10 +103,13 @@ export default async function LeverancierPagina({
       >
         {(
           [
-            ["Gecontracteerd", som("gecontracteerd")],
-            ["Gefactureerd", som("gefactureerd")],
-            ["Betaald", som("betaald")],
-            ["Prognose", som("prognose")],
+            [
+              "Gecontracteerd",
+              contracten.reduce((a, c) => a + c.gecontracteerd, 0),
+            ],
+            ["Gefactureerd", somDoc("totaal")],
+            ["Betaald", somDoc("betaald")],
+            ["Nog te betalen", somDoc("openstaand")],
           ] as const
         ).map(([label, waarde]) => (
           <div
@@ -182,6 +197,17 @@ export default async function LeverancierPagina({
               </p>
             )}
           </Card>
+          <Card aria-labelledby="documenten-titel" className="overflow-hidden">
+            <CardHeader
+              id="documenten-titel"
+              title="Facturen en bonnen"
+              className="pb-4"
+            />
+            <DocumentLijst
+              documenten={documenten}
+              leeg="Nog geen facturen of bonnen."
+            />
+          </Card>
         </div>
 
         <div className="min-w-0 space-y-4 lg:col-span-5 lg:space-y-5">
@@ -198,10 +224,12 @@ export default async function LeverancierPagina({
             <Card aria-labelledby="verwijderen-titel">
               <CardHeader id="verwijderen-titel" title="Verwijderen" />
               <div className="px-5 pt-4 pb-5 sm:px-6">
-                {contracten.length || eigenOffertes.length ? (
+                {contracten.length ||
+                eigenOffertes.length ||
+                documenten.length ? (
                   <p className="text-muted text-sm">
-                    Deze leverancier heeft offertes of contracten; die blijven
-                    bewaard. Verwijderen kan daarom niet.
+                    Deze leverancier heeft offertes, contracten of facturen; die
+                    blijven bewaard. Verwijderen kan daarom niet.
                   </p>
                 ) : (
                   <LeverancierVerwijderen id={id} naam={leverancier.naam} />

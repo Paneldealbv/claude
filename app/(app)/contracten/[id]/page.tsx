@@ -1,6 +1,7 @@
 import {
   Check,
   ChevronRight,
+  FilePlus,
   FileText,
   RotateCcw,
   Trash2,
@@ -18,6 +19,7 @@ import {
   TermijnFormulier,
   WijzigingFormulier,
 } from "@/components/contracten/formulieren";
+import { DocumentLijst } from "@/components/documenten/lijst";
 import { Card, CardHeader } from "@/components/ui/card";
 import { knopKlassen } from "@/components/ui/knop";
 import { StatusPill } from "@/components/ui/status";
@@ -28,6 +30,7 @@ import {
 } from "@/lib/acties/contracten";
 import { getActiefProject } from "@/lib/auth";
 import { laadContract } from "@/lib/data/contracten";
+import { documentOverzicht } from "@/lib/data/documenten";
 import {
   categorieLabels,
   categorieOpties,
@@ -103,11 +106,13 @@ export default async function ContractPagina({
 }: PageProps<"/contracten/[id]">) {
   const { id } = await params;
   const project = await getActiefProject();
-  const [contract, leveranciers, { invoer, resultaat }] = await Promise.all([
-    laadContract(id),
-    laadLeveranciers(project.id),
-    laadProjectResultaat(project.id),
-  ]);
+  const [contract, leveranciers, { invoer, resultaat }, alleDocumenten] =
+    await Promise.all([
+      laadContract(id),
+      laadLeveranciers(project.id),
+      laadProjectResultaat(project.id),
+      documentOverzicht(project.id),
+    ]);
   const cijfers = resultaat.contracten.find((c) => c.id === id);
   if (!contract || !cijfers) notFound();
 
@@ -167,6 +172,15 @@ export default async function ContractPagina({
   );
   const ingepland = cijfers.termijnen.reduce((a, t) => a + t.verwachtBedrag, 0);
   const geannuleerd = contract.status === "geannuleerd";
+  // Facturen van dit contract: gekoppeld aan het contract of met regels erop.
+  const viaRegels = new Set(
+    invoer.kostenRegels
+      .filter((k) => k.contractId === id)
+      .map((k) => k.documentId),
+  );
+  const documenten = alleDocumenten.filter(
+    (d) => d.contractId === id || viaRegels.has(d.id),
+  );
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -412,6 +426,18 @@ export default async function ContractPagina({
                       <span className="text-sm font-medium tabular-nums">
                         {formatEuro(t.verwachtBedrag)}
                       </span>
+                      {magBewerken && t.status !== "gefactureerd" && (
+                        <Link
+                          href={`/documenten/nieuw?contract=${id}&termijn=${t.id}`}
+                          className={knopKlassen("stil", "-my-1 px-2 py-1.5")}
+                          title="Termijnfactuur invoeren"
+                        >
+                          <FilePlus className="size-3.5" />
+                          <span className="sr-only">
+                            Factuur voor termijn {t.volgorde} invoeren
+                          </span>
+                        </Link>
+                      )}
                       {magBewerken && (
                         <form action={termijnVerwijderen}>
                           <input type="hidden" name="id" value={t.id} />
@@ -472,6 +498,42 @@ export default async function ContractPagina({
                 Geen termijnschema.
               </p>
             )}
+          </Card>
+
+          {/* Facturen */}
+          <Card aria-labelledby="facturen-titel" className="overflow-hidden">
+            <CardHeader
+              id="facturen-titel"
+              title="Facturen"
+              description={`${formatEuro(cijfers.gefactureerd)} gefactureerd, ${formatEuro(cijfers.betaald)} betaald.`}
+              action={
+                magBewerken && (
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/documenten/nieuw?type=factuur&contract=${id}`}
+                      className={knopKlassen("secundair", "px-3 py-2")}
+                    >
+                      <FilePlus className="size-4" />
+                      Factuur
+                    </Link>
+                    {cijfers.nogTeFactureren > 0 && (
+                      <Link
+                        href={`/documenten/nieuw?type=eindfactuur&contract=${id}`}
+                        className={knopKlassen("secundair", "px-3 py-2")}
+                      >
+                        Eindfactuur
+                      </Link>
+                    )}
+                  </div>
+                )
+              }
+              className="pb-4"
+            />
+            <DocumentLijst
+              documenten={documenten}
+              toonContract={false}
+              leeg="Nog geen facturen bij dit contract. Een termijnfactuur voer je in via het icoon bij de termijn."
+            />
           </Card>
         </div>
 

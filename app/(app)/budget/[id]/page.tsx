@@ -17,11 +17,13 @@ import {
   HernoemFormulier,
   VerwijderFormulier,
 } from "@/components/budget/formulieren";
+import { DocumentLijst } from "@/components/documenten/lijst";
 import { Card, CardHeader } from "@/components/ui/card";
 import { knopKlassen } from "@/components/ui/knop";
 import { StatusPill } from "@/components/ui/status";
 import { categorieHeropenen, categorieVerplaatsen } from "@/lib/acties/budget";
 import { getActiefProject } from "@/lib/auth";
+import { documentOverzicht } from "@/lib/data/documenten";
 import { laadOffertes } from "@/lib/data/offertes";
 import { laadProjectResultaat } from "@/lib/data/project";
 import { controleerAfsluiten, type Cijfers } from "@/lib/finance";
@@ -67,10 +69,12 @@ export default async function CategoriePagina({
 }: PageProps<"/budget/[id]">) {
   const { id } = await params;
   const project = await getActiefProject();
-  const [{ invoer, resultaat, vandaag }, offertes] = await Promise.all([
-    laadProjectResultaat(project.id),
-    laadOffertes(project.id),
-  ]);
+  const [{ invoer, resultaat, vandaag }, offertes, alleDocumenten] =
+    await Promise.all([
+      laadProjectResultaat(project.id),
+      laadOffertes(project.id),
+      documentOverzicht(project.id),
+    ]);
   const cat = resultaat.categorieen.find((c) => c.id === id);
   if (!cat) notFound();
 
@@ -167,6 +171,19 @@ export default async function CategoriePagina({
       prognose: eigen.reduce((a, x) => a + x.regel.prognose, 0),
     };
   });
+  // Losse kosten (niet via een contract) in deze categorie, per document.
+  const losBedrag = new Map<string, number>();
+  for (const k of invoer.kostenRegels) {
+    if (!k.contractId && k.categorieId && inBoom.has(k.categorieId)) {
+      losBedrag.set(
+        k.documentId,
+        (losBedrag.get(k.documentId) ?? 0) + k.bedrag,
+      );
+    }
+  }
+  const losseDocumenten = alleDocumenten.filter(
+    (d) => losBedrag.has(d.id) && d.status !== "vervallen",
+  );
   const openOffertes = offertes.filter(
     (o) =>
       o.status === "ontvangen" &&
@@ -313,6 +330,23 @@ export default async function CategoriePagina({
               </p>
             )}
           </Card>
+
+          {/* Losse kosten */}
+          {losseDocumenten.length > 0 && (
+            <Card aria-labelledby="kosten-titel" className="overflow-hidden">
+              <CardHeader
+                id="kosten-titel"
+                title="Losse kosten"
+                description="Facturen en bonnen die niet bij een contract horen; bedrag voor deze categorie."
+                className="pb-4"
+              />
+              <DocumentLijst
+                documenten={losseDocumenten}
+                bedragen={losBedrag}
+                leeg=""
+              />
+            </Card>
+          )}
 
           {/* Subcategorieën */}
           {(kinderen.length > 0 || magSubcategorie) && (
