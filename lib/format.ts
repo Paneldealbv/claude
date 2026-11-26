@@ -15,12 +15,47 @@ const euroFormatter = new Intl.NumberFormat("nl-NL", {
   maximumFractionDigits: 2,
 });
 
-/** Formatteert een bedrag in centen als euro, bijv. 123456 → "€ 1.234,56". */
-export function formatEuro(centen: number): string {
+const euroHeelFormatter = new Intl.NumberFormat("nl-NL", {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+/**
+ * Formatteert een bedrag in centen als euro, bijv. 123456 → "€ 1.234,56".
+ * Met `{ centen: false }` wordt afgerond op hele euro's ("€ 1.235"), bedoeld
+ * voor grote overzichtscijfers. Rekenen gebeurt altijd met de exacte centen.
+ */
+export function formatEuro(
+  centen: number,
+  { centen: metCenten = true }: { centen?: boolean } = {},
+): string {
   if (!Number.isInteger(centen)) {
     throw new TypeError(`Bedrag moet in hele centen zijn, kreeg: ${centen}`);
   }
-  return euroFormatter.format(centen / 100);
+  return (metCenten ? euroFormatter : euroHeelFormatter).format(centen / 100);
+}
+
+/** Bedrag met expliciet teken, voor afwijkingen: "+ € 4.580" / "− € 1.220". */
+export function formatEuroVerschil(
+  centen: number,
+  opties?: { centen?: boolean },
+): string {
+  if (centen === 0) return formatEuro(0, opties);
+  const teken = centen > 0 ? "+" : "\u2212";
+  return `${teken}\u00a0${formatEuro(Math.abs(centen), opties)}`;
+}
+
+/** Korte notatie voor grafiekassen: 2000000 → "€ 20k", 150000000 → "€ 1,5 mln". */
+export function formatEuroKort(centen: number): string {
+  const euro = centen / 100;
+  const abs = Math.abs(euro);
+  const getal = (n: number) =>
+    n.toLocaleString("nl-NL", { maximumFractionDigits: 1 });
+  if (abs >= 1_000_000) return `€\u00a0${getal(euro / 1_000_000)}\u00a0mln`;
+  if (abs >= 1_000) return `€\u00a0${getal(euro / 1_000)}k`;
+  return `€\u00a0${getal(euro)}`;
 }
 
 /**

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDatum, formatEuro, parseEuro } from "./format";
+import {
+  formatDatum,
+  formatEuro,
+  formatEuroKort,
+  formatEuroVerschil,
+  parseEuro,
+} from "./format";
 
 // Intl gebruikt een vaste spatie (U+00A0) tussen € en het bedrag.
 const nbsp = (s: string) => s.replace(/ /g, " ");
@@ -17,6 +23,34 @@ describe("formatEuro", () => {
 
   it("weigert bedragen die geen hele centen zijn", () => {
     expect(() => formatEuro(12.5)).toThrow(TypeError);
+  });
+});
+
+describe("formatEuro zonder centen", () => {
+  it("rondt af op hele euro's voor overzichtscijfers", () => {
+    expect(formatEuro(48958000, { centen: false })).toBe(nbsp("€ 489.580"));
+    expect(formatEuro(123456, { centen: false })).toBe(nbsp("€ 1.235"));
+  });
+});
+
+describe("formatEuroVerschil", () => {
+  it("toont het teken expliciet", () => {
+    expect(formatEuroVerschil(458000, { centen: false })).toBe(
+      nbsp("+ € 4.580"),
+    );
+    expect(formatEuroVerschil(-122000, { centen: false })).toBe(
+      nbsp("\u2212 € 1.220"),
+    );
+    expect(formatEuroVerschil(0)).toBe(nbsp("€ 0,00"));
+  });
+});
+
+describe("formatEuroKort", () => {
+  it("geeft compacte asnotatie", () => {
+    expect(formatEuroKort(0)).toBe(nbsp("€ 0"));
+    expect(formatEuroKort(2000000)).toBe(nbsp("€ 20k"));
+    expect(formatEuroKort(6148000)).toBe(nbsp("€ 61,5k"));
+    expect(formatEuroKort(150000000)).toBe(nbsp("€ 1,5 mln"));
   });
 });
 

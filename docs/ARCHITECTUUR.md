@@ -1,6 +1,7 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 2 · 26-11-2026 · verwerkt de aanvullingen van de opdrachtgever op het eerste bouwplan.
+Versie 3 · 26-11-2026 · verwerkt de beslissingen van de opdrachtgever na fase 0
+(afsluitcontrole, bouwdepot als deel van de hypotheek, AI-controles).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -169,22 +170,53 @@ Per eindcategorie `c`:
 | Nog niet vastgelegd   | `R`: budget waarvoor nog geen contract of uitgave is          |
 
 Zo blijft de prognose minimaal het budget zolang er nog werk open staat, en wordt
-een meevaller pas zichtbaar als je de categorie afsluit.
+een meevaller pas zichtbaar als je de categorie **expliciet afsluit**.
+
+**Controle bij afsluiten.** Voordat een categorie afgesloten kan worden, toont het
+systeem een controlelijst. De gebruiker moet de waarschuwingen bevestigen; bij
+geen enkele waarschuwing kan direct worden afgesloten.
+
+| Controle                   | Waarschuwing als                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| Openstaande facturen       | geboekte documenten in de categorie zijn nog niet (volledig) betaald                     |
+| Openstaande verplichtingen | een actief contract in de categorie heeft `C(l) > F(l)`: er komt nog een factuur         |
+| Termijnen                  | termijnen uit een termijnschema zijn nog niet gefactureerd                               |
+| Meer-/minderwerk           | er staat meer-/minderwerk met status `voorgesteld`                                       |
+| Te controleren             | er zijn documenten met status `concept` of `te_controleren` met regels in deze categorie |
+
+Afsluiten wordt gelogd in `activity_log` (wie, wanneer, welke waarschuwingen
+bevestigd) en kan door een eigenaar of bewerker weer worden heropend.
 
 ### 3.5 Projecttotalen en financiering
 
 ```
 Totale prognose      = Σ prognose over alle eindcategorieën
-Totaal beschikbaar   = Σ financieringsbronnen
+Totaal beschikbaar   = Σ hoofdbronnen (bronnen zonder bovenliggende bron)
 Financiële ruimte    = totaal beschikbaar − totale prognose   ← hoofdgetal dashboard
 Saldo per bron       = bedrag bron − Σ betalingen uit die bron
-Bouwdepot resterend  = saldo van de bron van type 'bouwdepot'
+Bouwdepot resterend  = bedrag bouwdepot − Σ betalingen uit het bouwdepot
 ```
 
-Financieringsbronnen: `eigen_geld`, `hypotheek`, `bouwdepot`, `schenking`,
-`lening`, `overig`. Het bouwdepot is een eigen bron. Het hypotheekbedrag in het
-systeem is dan het deel **buiten** het depot, zodat het depot niet dubbel telt. Een
-depotbron kan naar de hypotheek verwijzen; dat is alleen informatief.
+Hoofdbronnen: `eigen_geld`, `hypotheek`, `schenking`, `lening`, `overig`.
+
+**Het bouwdepot is een onderdeel van de hypotheek, geen extra bron.** Een
+hypotheek is één hoofdbron met het totale leenbedrag. Die bron wordt verdeeld in
+**delen** (`funding_sources` met `parent_source_id`): het `bouwdepot` en de
+`overige_hypotheekruimte`. Delen tellen **nooit** mee in het totaal beschikbaar;
+ze bestaan alleen om bij te houden waaruit betaald is.
+
+| Bron                             | Bedrag        | Telt mee in totaal |
+| -------------------------------- | ------------- | ------------------ |
+| Hypotheek (hoofdbron)            | € 400.000     | **ja**             |
+| ├ Bouwdepot (deel)               | € 100.000     | nee                |
+| └ Overige hypotheekruimte (deel) | € 300.000     | nee                |
+| **Totale financiering**          | **€ 400.000** |                    |
+
+- De database controleert dat de delen samen precies het bedrag van de hoofdbron
+  zijn.
+- Een betaling wijst naar het meest specifieke deel (bijv. het bouwdepot). Het
+  saldo van de hoofdbron is de som van de saldi van de delen.
+- Een hoofdbron zonder delen (eigen geld) wordt direct als betaalbron gebruikt.
 
 ### 3.6 Ruimtes
 
@@ -218,7 +250,7 @@ eigen categorie, ruimte(s) en BTW-tarief. Het bestand staat één keer in de ops
 - Bij verdelen naar rato (termijnfactuur over contractregels, betaling over regels,
   regel over ruimtes) gebruiken we de **grootste-restmethode**. De delen tellen
   daardoor altijd exact, tot op de cent, op tot het geheel.
-- **Alleen documenten met status `geboekt` tellen mee.** Concepten en documenten
+- **Alleen bevestigde documenten met status `geboekt` tellen mee.** Concepten en documenten
   die nog gecontroleerd moeten worden zie je apart ("3 documenten te controleren").
 
 ### 3.9 Waar de rekenlogica staat
@@ -270,10 +302,10 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 
 ### Financiering
 
-| Tabel             | Belangrijkste velden                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `funding_sources` | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id         |
-| `depot_claims`    | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status (schermen later) |
+| Tabel             | Belangrijkste velden                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `funding_sources` | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id (leeg = hoofdbron; gevuld = deel, bijv. bouwdepot) |
+| `depot_claims`    | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status (schermen later)                                            |
 
 ### Documenten en AI
 
@@ -319,13 +351,25 @@ geboekt.
      overeen met een termijn;
    - **duplicaatdetectie**: zelfde leverancier + documentnummer, of zelfde bedrag +
      leverancier binnen ±7 dagen;
-   - velden met een zekerheid onder 0,85 en elke mislukte controle worden een
-     "punt ter controle".
-4. **Controlescherm**: links het origineel, rechts het voorstel. Onzekere velden en
-   waarschuwingen zijn gemarkeerd en moeten bevestigd worden. Regels kun je
-   splitsen, samenvoegen en aan een andere categorie, ruimte of contract koppelen.
-5. **Boeken**: pas na bevestiging krijgt het document status `geboekt` en telt het
-   mee.
+   - **verplichte gegevens aanwezig**: leverancier, documentdatum, totaal en
+     minstens één regel; bij facturen ook documentnummer en vervaldatum (of
+     betaaltermijn);
+   - **rekenkundige controles** (los van wat de AI zegt): per regel
+     `excl + btw = incl`, BTW-bedrag past bij het tarief (afrondingsmarge 1 cent
+     per regel), som van de regels = totaal op document, BTW per tarief = som van
+     de regels met dat tarief;
+   - een **zekerheid onder 85%** geldt alleen als _indicatieve_ waarschuwing. Ook
+     een hoge zekerheid maakt een veld niet "goedgekeurd": de rekenkundige controles
+     en de bevestiging door de gebruiker beslissen, niet het percentage van de AI.
+4. **Controlescherm**: links het origineel, rechts het voorstel. Per veld zie je
+   een markering: _ontbreekt_, _klopt niet_ (mislukte controle), _onzeker_ (< 85%)
+   of _controleren_. Regels kun je splitsen, samenvoegen en aan een andere
+   categorie, ruimte of contract koppelen.
+5. **Bevestigen en boeken**: **elk** AI-voorstel moet door een gebruiker worden
+   bevestigd, ook als alles klopt. Zolang een verplicht veld ontbreekt of een
+   rekenkundige controle faalt, is de knop "Boeken" geblokkeerd. Na bevestiging
+   krijgt het document status `geboekt`, worden `gecontroleerd_door/op` vastgelegd
+   en telt het mee.
 
 Privacy: documenten gaan voor het uitlezen naar de Claude API. De API-sleutel en
 alle AI-aanroepen blijven op de server.
