@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/*
+ * Ontwerptokens. Stap 1 (ontwerp-shell) breidt dit uit met het volledige
+ * palet; voor nu alleen de basis voor licht en donker thema.
+ */
+:root {
+  --background: #f7f7f5;
+  --foreground: #16171a;
+  --muted: #6b6f76;
+  --card: #ffffff;
+  --border: #e6e6e3;
+  --accent: #1f5f4a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0d0f;
+    --foreground: #ececee;
+    --muted: #9a9ea6;
+    --card: #15171a;
+    --border: #25282d;
+    --accent: #5fbf9a;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
