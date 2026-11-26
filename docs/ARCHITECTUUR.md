@@ -446,7 +446,7 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 1. Ontwerp-shell ✓                    | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
 | 2. Supabase + inloggen ✓              | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
 | 3. Datamodel + rekenlogica ✓          | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
-| 4. Categorieën, ruimtes, budget       | Beheer en budgetpagina                                                                                                       |
+| 4. Categorieën, ruimtes, budget ✓     | Beheer en budgetpagina                                                                                                       |
 | 5. Leveranciers, offertes, contracten | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
 | 6. Documenten en betalingen           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
 | 7. Dashboard en rapportages           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |

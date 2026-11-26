@@ -335,8 +335,15 @@ export default async function CategoriePagina({
                       <dt className="text-muted text-xs">
                         Ten opzichte van het budget
                       </dt>
-                      <dd className="mt-1">
+                      <dd className="mt-1 flex flex-wrap items-center gap-2">
                         <Afwijking bedrag={controle.afwijkingNaAfsluiten} />
+                        <span className="text-muted text-xs">
+                          {controle.afwijkingNaAfsluiten < 0
+                            ? "meevaller na afsluiten"
+                            : controle.afwijkingNaAfsluiten > 0
+                              ? "overschrijding na afsluiten"
+                              : "precies volgens budget"}
+                        </span>
                       </dd>
                     </div>
                   </dl>
@@ -355,6 +362,13 @@ export default async function CategoriePagina({
                   ) : (
                     <p className="text-muted text-sm">
                       Er staat niets meer open in deze categorie.
+                    </p>
+                  )}
+                  {c.vastgelegd === 0 && c.budget > 0 && (
+                    <p className="border-warning/30 text-warning rounded-xl border px-3 py-2.5 text-sm">
+                      Let op: in deze categorie is nog niets vastgelegd. Na
+                      afsluiten telt het budget van {formatEuro(c.budget, heel)}{" "}
+                      niet meer mee in de prognose.
                     </p>
                   )}
                   {magBewerken && (

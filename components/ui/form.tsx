@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleCheck, Loader2, TriangleExclamationPoint } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
 import { knopKlassen, type KnopVariant } from "./knop";
@@ -19,15 +19,18 @@ export function Veld({
   fout?: string;
   hint?: ReactNode;
 } & Omit<ComponentProps<"input">, "name" | "id">) {
-  const foutId = fout ? `${naam}-fout` : undefined;
-  const hintId = hint ? `${naam}-hint` : undefined;
+  // Uniek id per veld: meerdere formulieren op één pagina kunnen dezelfde
+  // veldnaam hebben (bijv. "naam"), maar een label moet bij zijn eigen veld horen.
+  const id = useId();
+  const foutId = fout ? `${id}-fout` : undefined;
+  const hintId = hint ? `${id}-hint` : undefined;
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={naam} className="block text-sm font-medium">
+      <label htmlFor={id} className="block text-sm font-medium">
         {label}
       </label>
       <input
-        id={naam}
+        id={id}
         name={naam}
         aria-invalid={fout ? true : undefined}
         aria-describedby={

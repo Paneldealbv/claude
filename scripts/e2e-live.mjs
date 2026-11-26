@@ -254,8 +254,7 @@ async function main() {
       "gebruikte link werkt niet meer",
     );
 
-    // --- Gegevens via de API (zelfde rechten als de app) ---------------------
-    console.log("→ Gegevens vergelijken via de API");
+    // API-clients met dezelfde rechten als de app.
     const inloggen = async (acc) => {
       const c = createClient(URL_SB, publishable, geenSessie);
       const { error } = await c.auth.signInWithPassword({
@@ -273,9 +272,238 @@ async function main() {
     projectId = projA?.[0]?.id;
     ok(projA?.length === 1, "A ziet precies één project");
 
+    // --- Fase 4: budget, categorieën en ruimtes via de app --------------------
+    console.log("→ Budget, categorieën en ruimtes");
+    const formMet = (p, veld) => p.locator("form", { has: p.getByLabel(veld) });
+    const openCategorie = async (p, naam) => {
+      await p.goto(`${APP}/budget`);
+      await p.getByRole("link", { name: naam, exact: true }).click();
+      await p.waitForURL(/\/budget\/[0-9a-f-]{36}$/, { timeout: 20000 });
+      await p
+        .getByRole("heading", { level: 1, name: naam, exact: true })
+        .waitFor();
+      return new URL(p.url()).pathname.split("/").pop();
+    };
+
+    await pA.goto(`${APP}/budget`);
+    if (SCREENSHOTS)
+      await pA.screenshot({ path: `${SCREENSHOTS}/budget-leeg.png` });
+    await pA
+      .getByRole("button", { name: "Standaardindeling gebruiken" })
+      .click();
+    await pA
+      .getByRole("heading", { name: "Categorieën", exact: true })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA.getByRole("link", { name: "Keuken", exact: true }).count()) ===
+        1 &&
+        (await pA
+          .getByRole("link", { name: "Onvoorzien", exact: true })
+          .count()) === 1,
+      "standaardindeling aangemaakt",
+    );
+
+    const keukenId = await openCategorie(pA, "Keuken");
+    const nieuweRegel = formMet(pA, "Bedrag incl. BTW").last();
+    for (const [omschrijving, bedrag] of [
+      ["Keukenkasten", "15.000"],
+      ["Apparatuur", "9000"],
+    ]) {
+      await nieuweRegel.getByLabel("Omschrijving").fill(omschrijving);
+      await nieuweRegel.getByLabel("Bedrag incl. BTW").fill(bedrag);
+      await nieuweRegel.getByRole("button", { name: "Toevoegen" }).click();
+      await pA
+        .getByText(omschrijving, { exact: true })
+        .waitFor({ timeout: 20000 });
+    }
+    await pA.getByText("€ 24.000").first().waitFor({ timeout: 20000 });
+    ok(true, "budgetregels toegevoegd (€ 15.000 + € 9.000 = € 24.000)");
+
+    await pA.getByRole("button", { name: "Wijzig Apparatuur" }).click();
+    const bewerkRegel = formMet(pA, "Bedrag incl. BTW").first();
+    await bewerkRegel.getByLabel("Bedrag incl. BTW").fill("10.000");
+    await bewerkRegel.getByRole("button", { name: "Opslaan" }).click();
+    await pA.getByText("€ 25.000").first().waitFor({ timeout: 20000 });
+    ok(true, "budgetregel gewijzigd (totaal € 25.000)");
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/budget-keuken.png`,
+        fullPage: true,
+      });
+
+    const { data: keukenRegels } = await clientA
+      .from("budget_lines")
+      .select("amount_excl_cents, vat_cents, amount_incl_cents, vat_rate_bp")
+      .eq("category_id", keukenId)
+      .order("amount_incl_cents");
+    ok(
+      JSON.stringify(keukenRegels) ===
+        JSON.stringify([
+          {
+            amount_excl_cents: 826446,
+            vat_cents: 173554,
+            amount_incl_cents: 1000000,
+            vat_rate_bp: 2100,
+          },
+          {
+            amount_excl_cents: 1239669,
+            vat_cents: 260331,
+            amount_incl_cents: 1500000,
+            vat_rate_bp: 2100,
+          },
+        ]),
+      "budgetregels opgeslagen met excl., BTW en incl. tot op de cent",
+    );
+
+    // Afsluiten zonder waarschuwingen, en weer heropenen.
+    await openCategorie(pA, "Onvoorzien");
+    await pA.getByRole("button", { name: "Categorie afsluiten" }).click();
+    await pA.getByText(/^Afgesloten op /).waitFor({ timeout: 20000 });
+    ok(true, "categorie zonder openstaande zaken direct afgesloten");
+    await pA.getByRole("button", { name: "Heropenen" }).click();
+    await pA
+      .getByRole("button", { name: "Categorie afsluiten" })
+      .waitFor({ timeout: 20000 });
+    ok(true, "categorie heropend");
+
+    // Afsluiten mét waarschuwing: een document dat nog gecontroleerd moet worden.
+    const meubelsId = await openCategorie(pA, "Meubels");
+    const { data: controleDoc } = await clientA
+      .from("cost_documents")
+      .insert({
+        project_id: projectId,
+        type: "bon",
+        status: "te_controleren",
+        document_date: "2026-11-20",
+      })
+      .select("id")
+      .single();
+    await clientA.from("cost_lines").insert({
+      project_id: projectId,
+      cost_document_id: controleDoc.id,
+      category_id: meubelsId,
+      amount_excl_cents: 10000,
+      vat_rate_bp: 2100,
+      vat_cents: 2100,
+      amount_incl_cents: 12100,
+    });
+    await pA.reload();
+    ok(
+      (await pA
+        .getByText("1 document moet nog gecontroleerd worden")
+        .count()) === 1,
+      "afsluitcontrole waarschuwt voor een document in controle",
+    );
+    await pA.getByRole("button", { name: "Categorie afsluiten" }).click();
+    await pA
+      .getByText("Vink aan dat je de waarschuwingen hebt gelezen.")
+      .waitFor({ timeout: 20000 });
+    ok(true, "afsluiten met waarschuwingen vraagt om bevestiging");
+    await pA.getByLabel(/Ik heb de waarschuwingen gelezen/).check();
+    await pA.getByRole("button", { name: "Categorie afsluiten" }).click();
+    await pA.getByText(/^Afgesloten op /).waitFor({ timeout: 20000 });
+    const { data: log } = await clientA
+      .from("activity_log")
+      .select("action, changes")
+      .eq("record_id", meubelsId)
+      .eq("action", "categorie_afgesloten");
+    ok(
+      log?.[0]?.changes?.waarschuwingen_bevestigd?.length === 1,
+      "afsluiten na bevestiging, vastgelegd in het activiteitenlog",
+    );
+    await clientA.from("cost_documents").delete().eq("id", controleDoc.id);
+
+    // Subcategorie toevoegen, hernoemen en verwijderen.
+    const buitenId = await openCategorie(pA, "Buiten");
+    const subForm = formMet(pA, "Nieuwe subcategorie");
+    await subForm.getByLabel("Nieuwe subcategorie").fill("Zonwering");
+    await subForm.getByRole("button", { name: "Toevoegen" }).click();
+    await pA
+      .getByRole("link", { name: /Zonwering/ })
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("link", { name: /Zonwering/ }).click();
+    await pA
+      .getByRole("heading", { level: 1, name: "Zonwering" })
+      .waitFor({ timeout: 20000 });
+    await formMet(pA, "Naam").getByLabel("Naam").fill("Zonwering & screens");
+    await formMet(pA, "Naam").getByRole("button", { name: "Opslaan" }).click();
+    await pA
+      .getByRole("heading", { level: 1, name: "Zonwering & screens" })
+      .waitFor({ timeout: 20000 });
+    await pA.getByLabel(/Ja, verwijder/).check();
+    await pA.getByRole("button", { name: "Categorie verwijderen" }).click();
+    await pA.waitForURL(`**/budget/${buitenId}`, { timeout: 20000 });
+    ok(
+      (await pA.getByRole("link", { name: /Zonwering/ }).count()) === 0,
+      "subcategorie toegevoegd, hernoemd en verwijderd",
+    );
+
+    await pA.goto(`${APP}/budget`);
+    if (SCREENSHOTS) {
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/budget-overzicht.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 390, height: 844 });
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/budget-mobiel.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 1440, height: 900 });
+    }
+
+    // Ruimtes.
+    await pA.goto(`${APP}/ruimtes`);
+    await pA
+      .getByRole("button", { name: "Standaardruimtes gebruiken" })
+      .click();
+    await pA
+      .getByRole("heading", { name: "12 ruimtes", exact: true })
+      .waitFor({ timeout: 20000 });
+    const nieuweRuimte = formMet(pA, "Verdieping (optioneel)").last();
+    await nieuweRuimte.getByLabel("Naam").fill("Werkkamer");
+    await nieuweRuimte
+      .getByLabel("Verdieping (optioneel)")
+      .fill("Eerste verdieping");
+    await nieuweRuimte
+      .getByRole("button", { name: "Ruimte toevoegen" })
+      .click();
+    await pA
+      .getByRole("heading", { name: "13 ruimtes", exact: true })
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("button", { name: "Wijzig Werkkamer" }).click();
+    const bewerkRuimte = formMet(pA, "Verdieping (optioneel)").first();
+    await bewerkRuimte.getByLabel("Naam").fill("Kantoor");
+    await bewerkRuimte.getByRole("button", { name: "Opslaan" }).click();
+    await pA.getByText("Kantoor", { exact: true }).waitFor({ timeout: 20000 });
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/ruimtes.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Verwijder Kantoor" }).click();
+    await pA
+      .getByRole("heading", { name: "12 ruimtes", exact: true })
+      .waitFor({ timeout: 20000 });
+    ok(true, "ruimtes: standaard, toevoegen, wijzigen en verwijderen");
+
+    // B ziet hetzelfde budget; C helemaal niets.
+    await pB.goto(`${APP}/budget`);
+    await pB.getByText("€ 25.000").first().waitFor({ timeout: 20000 });
+    await openCategorie(pB, "Keuken");
+    ok(
+      (await pB.getByText("Keukenkasten", { exact: true }).count()) === 1,
+      "B ziet hetzelfde budget en dezelfde budgetregels",
+    );
+    await pC.goto(`${APP}/budget/${keukenId}`);
+    await pC.waitForURL("**/welkom", { timeout: 20000 });
+    ok(true, "C (geen toegang) ziet het budget van A niet");
+
+    // --- Gegevens via de API (zelfde rechten als de app) ---------------------
+    console.log("→ Gegevens vergelijken via de API");
     const r1 = await clientA
       .from("categories")
-      .insert({ project_id: projectId, name: "Keuken" });
+      .insert({ project_id: projectId, name: "API-categorie" });
     const r2 = await clientB
       .from("suppliers")
       .insert({ project_id: projectId, name: "Leverancier van B" });
@@ -285,6 +513,8 @@ async function main() {
       "projects",
       "project_members",
       "categories",
+      "budget_lines",
+      "rooms",
       "suppliers",
       "profiles",
     ];
@@ -301,11 +531,14 @@ async function main() {
     const zichtB = await zicht(clientB);
     ok(
       JSON.stringify(zichtA) === JSON.stringify(zichtB),
-      "A en B zien exact dezelfde gegevens (project, leden, categorieën, leveranciers, profielen)",
+      "A en B zien exact dezelfde gegevens (project, leden, categorieën, budget, ruimtes, leveranciers, profielen)",
     );
     ok(
-      zichtA.categories.length === 1 && zichtA.suppliers.length === 1,
-      "beide toevoegingen zichtbaar",
+      zichtA.categories.some((c) => c.name === "API-categorie") &&
+        zichtA.suppliers.length === 1 &&
+        zichtA.budget_lines.length === 2 &&
+        zichtA.rooms.length === 12,
+      "alle toevoegingen zichtbaar (ook budget en ruimtes)",
     );
 
     const zichtC = await zicht(clientC);
@@ -313,6 +546,8 @@ async function main() {
       zichtC.projects.length === 0 &&
         zichtC.project_members.length === 0 &&
         zichtC.categories.length === 0 &&
+        zichtC.budget_lines.length === 0 &&
+        zichtC.rooms.length === 0 &&
         zichtC.suppliers.length === 0 &&
         zichtC.profiles.length === 1,
       "C ziet niets van het project (alleen het eigen profiel)",

@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { Melding, Veld, VerzendKnop } from "@/components/ui/form";
 import { knopKlassen } from "@/components/ui/knop";
 import type { ActieStatus } from "@/lib/acties/project";
@@ -30,16 +30,17 @@ export type RuimteWeergave = {
 };
 
 function VerdiepingVeld({ defaultValue }: { defaultValue?: string | null }) {
+  const lijstId = useId();
   return (
     <>
       <Veld
         label="Verdieping (optioneel)"
         naam="verdieping"
-        list="verdiepingen"
+        list={lijstId}
         autoComplete="off"
         defaultValue={defaultValue ?? ""}
       />
-      <datalist id="verdiepingen">
+      <datalist id={lijstId}>
         {VERDIEPINGEN.map((v) => (
           <option key={v} value={v} />
         ))}

@@ -10,6 +10,16 @@ const TECHNISCH =
   /violates|permission denied|relation|column|constraint|syntax/i;
 
 export function dbFout(fout: PostgrestError | null): string {
+  // Technische details alleen in de serverlogs, nooit naar de browser.
+  if (fout) {
+    console.error(
+      "[database]",
+      fout.code,
+      fout.message,
+      fout.details ?? "",
+      fout.hint ?? "",
+    );
+  }
   if (
     fout &&
     EIGEN_CODES.has(fout.code) &&
