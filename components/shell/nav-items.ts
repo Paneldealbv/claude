@@ -36,12 +36,7 @@ export const navGroups: NavGroup[] = [
       { href: "/offertes", label: "Offertes", icon: FileText },
       { href: "/contracten", label: "Contracten", icon: Handshake },
       { href: "/documenten", label: "Facturen & bonnen", icon: Receipt },
-      {
-        href: "/te-controleren",
-        label: "Te controleren",
-        icon: ScanSearch,
-        badge: 3,
-      },
+      { href: "/te-controleren", label: "Te controleren", icon: ScanSearch },
     ],
   },
   {
@@ -65,7 +60,7 @@ export const mobileTabs: NavItem[] = [
   { href: "/dashboard", label: "Overzicht", icon: LayoutDashboard },
   { href: "/budget", label: "Budget", icon: Wallet },
   { href: "/documenten", label: "Documenten", icon: Receipt },
-  { href: "/te-controleren", label: "Controle", icon: ScanSearch, badge: 3 },
+  { href: "/te-controleren", label: "Controle", icon: ScanSearch },
 ];
 
 export function isActive(pathname: string, href: string) {

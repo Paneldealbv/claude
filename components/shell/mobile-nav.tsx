@@ -5,13 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { cn } from "@/lib/cn";
-import { demoProject } from "@/lib/demo/data";
 import { AddDocumentFab } from "./add-document";
 import { isActive, mobileTabs, type NavItem } from "./nav-items";
+import { useShell } from "./shell-context";
 import { Logo, SidebarContent } from "./sidebar";
 
 /** Bovenbalk + lade met het volledige menu (alleen < lg). */
 export function MobileHeader() {
+  const { project } = useShell();
   const lade = useRef<HTMLDialogElement>(null);
   const sluit = () => lade.current?.close();
 
@@ -28,7 +29,7 @@ export function MobileHeader() {
         </button>
         <Logo className="size-7" />
         <p className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
-          {demoProject.naam}
+          {project.naam}
         </p>
       </header>
 

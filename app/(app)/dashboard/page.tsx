@@ -17,17 +17,18 @@ import {
   demoCategorieen,
   demoFinanciering,
   demoOpenPosten,
-  demoProject,
   demoTeControleren,
   demoTotalen as t,
 } from "@/lib/demo/data";
-import { formatDatum, formatEuro, formatEuroVerschil } from "@/lib/format";
+import { getActiefProject } from "@/lib/auth";
+import { formatEuro, formatEuroVerschil } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 const heel = { centen: false } as const;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const project = await getActiefProject();
   const binnenWeek = demoOpenPosten.filter(
     (p) => p.dagenTotVervallen >= 0 && p.dagenTotVervallen <= 7,
   ).length;
@@ -39,15 +40,7 @@ export default function DashboardPage() {
 
       <PageHeader
         titel="Dashboard"
-        omschrijving={
-          <>
-            {demoProject.naam} · bijgewerkt{" "}
-            <span className="whitespace-nowrap">
-              {formatDatum(demoProject.bijgewerkt)}
-            </span>{" "}
-            · alle bedragen incl. BTW
-          </>
-        }
+        omschrijving={<>{project.naam} · alle bedragen incl. BTW</>}
       />
 
       <section
