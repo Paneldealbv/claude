@@ -42,7 +42,7 @@ export default function Home() {
 
       <p className="text-muted text-sm">
         Voorbeeldbedragen ter controle van de opmaak ·{" "}
-        {formatDatum("2026-11-26")}
+        <span className="whitespace-nowrap">{formatDatum("2026-11-26")}</span>
       </p>
     </main>
   );
