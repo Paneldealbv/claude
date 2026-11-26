@@ -69,7 +69,7 @@
     0 12px 32px -8px rgb(23 24 26 / 0.18), 0 2px 6px rgb(23 24 26 / 0.06);
 }
 
-@media (prefers-color-scheme: dark) {
+@media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
@@ -125,58 +125,61 @@
   }
 }
 
-:root[data-theme="dark"] {
-  color-scheme: dark;
+/* Alleen op het scherm: afdrukken en PDF zijn altijd licht. */
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
 
-  --background: #0c0e10;
-  --surface: #15181b;
-  --surface-2: #1b1f23;
-  --surface-3: #23282d;
-  --border: #252a2f;
-  --border-strong: #323840;
-  --foreground: #ecedee;
-  --muted: #a0a4aa;
-  --subtle: #7d828a;
+    --background: #0c0e10;
+    --surface: #15181b;
+    --surface-2: #1b1f23;
+    --surface-3: #23282d;
+    --border: #252a2f;
+    --border-strong: #323840;
+    --foreground: #ecedee;
+    --muted: #a0a4aa;
+    --subtle: #7d828a;
 
-  --accent: #2fa57c;
-  --accent-hover: #3bb58a;
-  --accent-foreground: #04140e;
-  --accent-soft: #143127;
-  --accent-ink: #5cc59e;
+    --accent: #2fa57c;
+    --accent-hover: #3bb58a;
+    --accent-foreground: #04140e;
+    --accent-soft: #143127;
+    --accent-ink: #5cc59e;
 
-  --gold: #d4b06a;
-  --gold-hover: #dfbe7c;
-  --gold-foreground: #1b1508;
+    --gold: #d4b06a;
+    --gold-hover: #dfbe7c;
+    --gold-foreground: #1b1508;
 
-  --sidebar: #0a0c0e;
-  --sidebar-hover: #14181b;
-  --sidebar-active: #1a1f23;
-  --sidebar-border: #1a1e22;
-  --sidebar-foreground: #e6ece9;
-  --sidebar-muted: #8b949b;
+    --sidebar: #0a0c0e;
+    --sidebar-hover: #14181b;
+    --sidebar-active: #1a1f23;
+    --sidebar-border: #1a1e22;
+    --sidebar-foreground: #e6ece9;
+    --sidebar-muted: #8b949b;
 
-  --positive: #4fc27a;
-  --positive-soft: #12291b;
-  --warning: #e2a63c;
-  --warning-soft: #2c2312;
-  --critical: #f0766b;
-  --critical-soft: #331816;
-  --info: #86a6e0;
-  --info-soft: #172235;
+    --positive: #4fc27a;
+    --positive-soft: #12291b;
+    --warning: #e2a63c;
+    --warning-soft: #2c2312;
+    --critical: #f0766b;
+    --critical-soft: #331816;
+    --info: #86a6e0;
+    --info-soft: #172235;
 
-  --demo: #e8bd62;
-  --demo-soft: #261f10;
-  --demo-border: #4a3a18;
+    --demo: #e8bd62;
+    --demo-soft: #261f10;
+    --demo-border: #4a3a18;
 
-  --series-1: #2fa57c;
-  --series-1-wash: rgb(47 165 124 / 0.24);
-  --series-2: #c98d2c;
-  --series-3: #6f90d0;
-  --grid: #23272c;
-  --axis: #3a4047;
+    --series-1: #2fa57c;
+    --series-1-wash: rgb(47 165 124 / 0.24);
+    --series-2: #c98d2c;
+    --series-3: #6f90d0;
+    --grid: #23272c;
+    --axis: #3a4047;
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  }
 }
 
 @theme inline {
@@ -292,4 +295,19 @@ dialog::backdrop {
 }
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Afdrukken en PDF: licht, zonder menu's, kleuren van balken behouden. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  body {
+    background: #fff;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

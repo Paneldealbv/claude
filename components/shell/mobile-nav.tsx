@@ -18,7 +18,7 @@ export function MobileHeader() {
 
   return (
     <>
-      <header className="border-border bg-background/85 sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-md lg:hidden">
+      <header className="border-border bg-background/85 sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-md lg:hidden print:hidden">
         <button
           type="button"
           onClick={() => lade.current?.showModal()}
@@ -88,7 +88,7 @@ export function MobileTabbar() {
   return (
     <nav
       aria-label="Snelmenu"
-      className="border-border bg-surface/95 safe-bottom fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-md lg:hidden"
+      className="border-border bg-surface/95 safe-bottom fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-md lg:hidden print:hidden"
     >
       <div className="mx-auto flex max-w-md items-end px-2">
         <Tab item={een} pathname={pathname} />

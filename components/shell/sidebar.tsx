@@ -224,7 +224,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 export function Sidebar() {
   return (
-    <aside className="bg-sidebar fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">
+    <aside className="bg-sidebar fixed inset-y-0 left-0 z-30 hidden w-64 lg:block print:hidden">
       <SidebarContent />
     </aside>
   );

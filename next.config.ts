@@ -23,6 +23,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Excel-export: als gewone Node-module laden in plaats van te bundelen.
+  serverExternalPackages: ["exceljs"],
   turbopack: {
     rules: {
       "*.css": {
