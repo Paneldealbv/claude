@@ -112,11 +112,18 @@ mailserver (bijv. Resend of Brevo, gratis te starten):
 
 ## Online zetten (Vercel)
 
-1. vercel.com → **Add New → Project** → kies de GitHub-repository en de
-   branch met deze code.
-2. Bij **Environment Variables**:
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
-   `NEXT_PUBLIC_SITE_URL` (het Vercel-adres, bijv. `https://nieuwbouw-dashboard.vercel.app`).
-3. **Deploy**.
-4. Het Vercel-adres toevoegen aan de toegestane links in Supabase
-   (`SITE_URLS=… node scripts/supabase-beheer.mjs auth`).
+Productie: `https://nieuwbouw-dashboard-paneldeal.vercel.app` (vanaf `main`).
+
+1. vercel.com → **Add New → Project** → **GitHub** → repository `claude`.
+2. **Environment Variables**: `NEXT_PUBLIC_SUPABASE_URL` en
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. `NEXT_PUBLIC_SITE_URL` is optioneel:
+   zonder deze waarde gebruikt de app het adres van het verzoek.
+3. **Deploy**. Serverfuncties draaien in Frankfurt (`fra1`, zie `vercel.json`).
+4. **Settings → Deployment Protection → Vercel Authentication: Disabled.**
+   Anders moet iedere bezoeker eerst bij Vercel inloggen; de app heeft een
+   eigen login en de database eigen beveiliging.
+5. Het productie-adres als Site URL in Supabase Auth zetten:
+   `SITE_URLS=https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
+
+Controle na een deploy: `APP_URL=https://nieuwbouw-dashboard-paneldeal.vercel.app npm run test:e2e`
+(20 controles met tijdelijke accounts die daarna worden verwijderd).
