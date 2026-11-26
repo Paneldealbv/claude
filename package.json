@@ -17,6 +17,7 @@
     "test:e2e": "node scripts/e2e-live.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.2",
     "clsx": "^2.1.1",
