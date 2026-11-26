@@ -44,4 +44,13 @@ echo "→ Beveiligingstests"
 "${DB[@]}" -f "$ROOT/supabase/tests/rls.test.sql" 2>&1 >/dev/null \
   | sed -e 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /' -e 's/^NOTICE:  /  /'
 status=${PIPESTATUS[0]}
-exit "$status"
+[ "$status" = "0" ] || exit "$status"
+
+echo "→ Live-controle (zelfde script als op Supabase, wordt teruggedraaid)"
+uit="$("${DB[@]}" -f "$ROOT/supabase/tests/live-check.sql" 2>&1 || true)"
+if grep -q "LIVE-TEST GESLAAGD" <<<"$uit"; then
+  grep -o "LIVE-TEST GESLAAGD.*" <<<"$uit" | sed 's/^/  ✓ /'
+else
+  echo "$uit"
+  exit 1
+fi

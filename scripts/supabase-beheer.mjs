@@ -288,7 +288,27 @@ async function envLocal() {
 }
 
 // -----------------------------------------------------------------------------
+async function livetest() {
+  await project();
+  const inhoud = await readFile(
+    path.join(ROOT, "supabase", "tests", "live-check.sql"),
+    "utf8",
+  );
+  try {
+    await sql(inhoud);
+    stop("Onverwacht: de live-test eindigde zonder resultaat.");
+  } catch (e) {
+    const m = /LIVE-TEST GESLAAGD[^"\\]*/.exec(e.message);
+    if (m) {
+      console.log(`\n✓ ${m[0]}`);
+      return;
+    }
+    stop(`Live-test mislukt: ${e.message}`);
+  }
+}
+
 const opdrachten = {
+  livetest,
   controle: async () => {
     await project();
     const g = await uitgevoerd();
