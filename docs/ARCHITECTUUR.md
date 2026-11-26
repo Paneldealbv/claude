@@ -497,46 +497,77 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 ## 5. AI-documentherkenning
 
 **Uitgangspunt: de AI stelt voor, de gebruiker beslist.** Niets wordt automatisch
-geboekt.
+geboekt; alleen geboekte documenten tellen mee.
 
-1. **Upload** (camera op telefoon of PDF). De server berekent de sha256. Is
-   precies dit bestand al bekend, dan volgt direct de melding "dit document is al
-   geüpload" met een link.
-2. **Uitlezen**: Claude krijgt het document met een vast JSON-schema. Terug komen
-   per veld een waarde, een zekerheid (0–1) en de tekst waar het op gebaseerd is:
-   leverancier, KvK/IBAN, documenttype, nummer, datums, totaal, BTW per tarief en
-   **alle regels**, elk met een voorgestelde categorie (uit onze eigen lijst) en
-   ruimte.
-3. **Controle op de server**:
-   - som van de regels = totaal op document, BTW-bedragen kloppen per tarief;
-   - leverancier matchen op KvK, IBAN of naam;
-   - **contract of offerte voorstellen**: zelfde leverancier, verwijzing naar
-     offertenummer, bedrag past binnen het nog niet gefactureerde deel of komt
-     overeen met een termijn;
+1. **Upload** ("Bon fotograferen" opent op een telefoon meteen de camera,
+   "Factuur uploaden" kiest een PDF of foto). De browser berekent de sha256 en
+   de server controleert die: is precies dit bestand al bekend, dan wordt het
+   bestaande gebruikt; is het al ingevoerd, dan volgt "dit document is al
+   ingevoerd" met een link, en staat er al een voorstel voor, dan opent dat.
+   Grote foto's worden in de browser verkleind (langste zijde 2400 px, JPG).
+2. **Uitlezen**: Claude krijgt het document met een vast schema (structured
+   output, `lib/ai/schema.ts`). Terug komen per veld een waarde, een zekerheid
+   (0–1) en de tekst waar het op gebaseerd is: leverancier, KvK/IBAN/BTW-nummer,
+   documenttype, nummer, datums, betaaltermijn, totaal, BTW per tarief en
+   **alle regels**, elk met een voorgestelde categorie, ruimte of contractregel
+   uit onze eigen lijsten. Bij de contracten sturen we ook de termijnen en het
+   nog te factureren bedrag mee.
+3. **Controle op de server** (`lib/ai/controles.ts` en `lib/ai/voorstel.ts`,
+   los van wat de AI zegt):
+   - id's die niet bij het project horen of niet bij elkaar passen worden
+     weggegooid (een contract moet bij de leverancier horen, een termijn bij
+     het contract, een contractregel bij het contract);
+   - leverancier matchen op KvK, IBAN, BTW-nummer of naam;
    - **duplicaatdetectie**: zelfde leverancier + documentnummer, of zelfde bedrag +
      leverancier binnen ±7 dagen;
    - **verplichte gegevens aanwezig**: leverancier, documentdatum, totaal en
      minstens één regel; bij facturen ook documentnummer en vervaldatum (of
      betaaltermijn);
-   - **rekenkundige controles** (los van wat de AI zegt): per regel
-     `excl + btw = incl`, BTW-bedrag past bij het tarief (afrondingsmarge 1 cent
-     per regel), som van de regels = totaal op document, BTW per tarief = som van
-     de regels met dat tarief;
+   - **rekenkundige controles**: per regel `excl + btw = incl`, BTW-bedrag past
+     bij het tarief (afrondingsmarge 1 cent per regel), som van de regels = totaal
+     op document, BTW per tarief = som van de regels met dat tarief;
+   - een datum in de toekomst of een vervaldatum vóór de documentdatum;
    - een **zekerheid onder 85%** geldt alleen als _indicatieve_ waarschuwing. Ook
      een hoge zekerheid maakt een veld niet "goedgekeurd": de rekenkundige controles
      en de bevestiging door de gebruiker beslissen, niet het percentage van de AI.
-4. **Controlescherm**: links het origineel, rechts het voorstel. Per veld zie je
-   een markering: _ontbreekt_, _klopt niet_ (mislukte controle), _onzeker_ (< 85%)
-   of _controleren_. Regels kun je splitsen, samenvoegen en aan een andere
-   categorie, ruimte of contract koppelen.
+4. **Controlescherm** (`/te-controleren/[id]`): links het origineel, rechts de
+   aandachtspunten (_mogelijk dubbel_, _klopt niet_, _ontbreekt_, _onzeker_) met
+   de opmerkingen van de AI, en het gewone documentformulier, vooringevuld. Elk
+   punt staat ook bij het veld waar het over gaat. Regels kun je aanpassen,
+   toevoegen, verwijderen en aan een andere categorie, ruimte of contract
+   koppelen. Herkent de AI de leverancier niet, dan staat een nieuwe klaar met
+   KvK, IBAN en BTW-nummer van het document.
 5. **Bevestigen en boeken**: **elk** AI-voorstel moet door een gebruiker worden
-   bevestigd, ook als alles klopt. Zolang een verplicht veld ontbreekt of een
-   rekenkundige controle faalt, is de knop "Boeken" geblokkeerd. Na bevestiging
-   krijgt het document status `geboekt`, worden `gecontroleerd_door/op` vastgelegd
-   en telt het mee.
+   bevestigd, ook als alles klopt. Boeken kan pas als het formulier volledig is:
+   documentnummer (niet bij een bon), totaal en leverancier ingevuld, elke regel
+   hoort ergens bij en de regels tellen op tot het totaal. BTW wordt per regel uit
+   bedrag en tarief berekend en klopt dus altijd. Na bevestiging krijgt het
+   document status `geboekt` en bron `ai`, legt de database vast wie en wanneer,
+   en wordt het voorstel `verwerkt` (gekoppeld aan het document). Opslaan als
+   concept kan ook; dan staat het document bij Te controleren.
 
-Privacy: documenten gaan voor het uitlezen naar de Claude API. De API-sleutel en
-alle AI-aanroepen blijven op de server.
+### Uitwerking (vastgelegd in fase 8)
+
+- Claude API via `@anthropic-ai/sdk`, alleen op de server (`lib/ai/herkennen.ts`).
+  Model `claude-opus-5-5` met structured output; bij overbelasting schakelt de
+  API zelf over op een ander model. Eén poging van maximaal 55 seconden, binnen
+  de 60 seconden van de serverfunctie (`maxDuration` op de pagina's).
+- PDF's tot 20 MB en foto's (JPG, PNG, WEBP) tot 5 MB. HEIC kan de AI niet
+  lezen; een iPhone levert bij het kiezen vanzelf een JPG.
+- Statussen van een voorstel: `bezig` → `te_controleren` of `mislukt` →
+  `verwerkt`. Bij `mislukt` (of na twee minuten nog `bezig`: de functie is
+  afgebroken) kun je opnieuw laten uitlezen of de gegevens zelf invullen.
+  Een voorstel verwijderen haalt ook het bestand weg als het nergens anders bij
+  hoort.
+- Maximaal 30 keer uitlezen per uur per project.
+- Zonder API-sleutel werkt alles behalve het uitlezen: na het uploaden ga je
+  meteen naar zelf invoeren, met het bestand al gekoppeld.
+- Voorstellen staan bij Te controleren, in de teller in het menu en op het
+  dashboard.
+
+Privacy: documenten gaan voor het uitlezen naar de Claude API (Anthropic). De
+API-sleutel (`ANTHROPIC_API_KEY`) en alle AI-aanroepen blijven op de server; de
+originelen blijven in de afgeschermde opslag van het project.
 
 ---
 
@@ -576,6 +607,6 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 5. Leveranciers, offertes, contracten ✓ | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
 | 6. Documenten en betalingen ✓           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
 | 7. Dashboard en rapportages ✓           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
-| 8. AI-documentherkenning                | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
+| 8. AI-documentherkenning ✓              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
 | 9. Financiering                         | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
 | 10. Afronding                           | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |

@@ -19,6 +19,7 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | `NEXT_PUBLIC_SUPABASE_URL`                 | nee                          | `.env.local`, Vercel                                    |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`     | nee, voor de browser bedoeld | `.env.local`, Vercel                                    |
 | `NEXT_PUBLIC_SITE_URL`                     | nee                          | `.env.local`, Vercel                                    |
+| `ANTHROPIC_API_KEY` (AI-herkenning)        | **ja**, alleen op de server  | `.env.local`, Vercel (Production en Preview)            |
 | Secret key (`sb_secret_…`)                 | **ja**                       | wordt door de app niet gebruikt                         |
 | Persoonlijk toegangstoken (Management API) | **ja**                       | alleen tijdelijk bij het uitvoeren van het beheerscript |
 | Databasewachtwoord                         | **ja**                       | alleen bij de eigenaar                                  |
@@ -136,5 +137,18 @@ Productie: `https://nieuwbouw-dashboard-paneldeal.vercel.app` (vanaf `main`).
 5. Het productie-adres als Site URL in Supabase Auth zetten:
    `SITE_URLS=https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
 
+### AI-herkenning aanzetten
+
+1. Maak een API-sleutel aan op console.anthropic.com (**API Keys → Create
+   Key**) en zet een bestedingslimiet onder **Billing → Limits**.
+2. Vercel → project → **Settings → Environment Variables**: naam
+   `ANTHROPIC_API_KEY`, de sleutel als waarde, voor **Production** en
+   **Preview**. Nooit in de code of in GitHub.
+3. Opnieuw deployen (**Deployments → … → Redeploy**), want een nieuwe variabele
+   geldt pas na een deploy.
+
+Zonder sleutel werkt de app gewoon; alleen het automatisch uitlezen staat uit.
+
 Controle na een deploy: `APP_URL=https://nieuwbouw-dashboard-paneldeal.vercel.app npm run test:e2e`
-(20 controles met tijdelijke accounts die daarna worden verwijderd).
+(ruim 100 controles met tijdelijke accounts die daarna worden verwijderd; met
+AI-sleutel ook een echte herkenning van een testfactuur).

@@ -8,6 +8,11 @@
  *   budget, categorieën en ruimtes (fase 4)
  *   leveranciers, offertes met PDF, vergelijken, accepteren → contract,
  *   meer-/minderwerk, termijnschema en status (fase 5)
+ *   facturen, bonnen en betalingen (fase 6), dashboard en rapportages (fase 7)
+ *   AI-documentherkenning (fase 8): uploaden en foto verkleinen, het
+ *   controlescherm met een vast testvoorstel, boeken na bevestiging,
+ *   verplichte velden, voorstel verwijderen; met AI-sleutel ook een echte
+ *   herkenning van een testfactuur
  *   C (geen toegang) ziet niets en kan niets wijzigen, ook geen bestanden
  *   niet ingelogd → geen toegang
  * Daarna worden project en testaccounts volledig verwijderd en wordt
@@ -23,6 +28,7 @@
  */
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
+import { deflateSync } from "node:zlib";
 import { createClient } from "@supabase/supabase-js";
 
 const require = createRequire(import.meta.url);
@@ -62,7 +68,7 @@ const sql = (query) =>
 
 const geenSessie = { auth: { persistSession: false, autoRefreshToken: false } };
 
-/** Kleine, geldige PDF met één regel tekst (voor de uploadtest). */
+/** Kleine, geldige PDF met één regel tekst, of meerdere regels (factuur). */
 function maakPdf(tekst) {
   const objecten = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -71,7 +77,14 @@ function maakPdf(tekst) {
     null, // inhoud
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
-  const inhoud = `BT /F1 24 Tf 72 760 Td (${tekst}) Tj ET`;
+  const veilig = (t) => t.replace(/[\\()]/g, (c) => `\\${c}`);
+  const inhoud = Array.isArray(tekst)
+    ? tekst
+        .map(
+          (t, i) => `BT /F1 11 Tf 60 ${780 - i * 18} Td (${veilig(t)}) Tj ET`,
+        )
+        .join("\n")
+    : `BT /F1 24 Tf 72 760 Td (${veilig(tekst)}) Tj ET`;
   objecten[3] = `<< /Length ${inhoud.length} >>\nstream\n${inhoud}\nendstream`;
   let pdf = "%PDF-1.4\n";
   const posities = [];
@@ -86,6 +99,67 @@ function maakPdf(tekst) {
   pdf += `trailer\n<< /Size ${objecten.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(pdf, "latin1");
 }
+
+const CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** Grote PNG (licht papier met ruis), zoals een foto van een telefoon. */
+function maakPng(breedte, hoogte) {
+  const rijen = [];
+  for (let y = 0; y < hoogte; y++) {
+    const rij = randomBytes(1 + breedte * 3);
+    rij[0] = 0;
+    for (let i = 1; i < rij.length; i++) rij[i] = 240 | (rij[i] & 15);
+    rijen.push(rij);
+  }
+  const blok = (type, data) => {
+    const lengte = Buffer.alloc(4);
+    lengte.writeUInt32BE(data.length);
+    const inhoud = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(inhoud));
+    return Buffer.concat([lengte, inhoud, crc]);
+  };
+  const kop = Buffer.alloc(13);
+  kop.writeUInt32BE(breedte, 0);
+  kop.writeUInt32BE(hoogte, 4);
+  kop[8] = 8; // bits per kanaal
+  kop[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    blok("IHDR", kop),
+    blok("IDAT", deflateSync(Buffer.concat(rijen))),
+    blok("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** Testfactuur voor de echte AI-herkenning (alleen met AI-sleutel). */
+const TESTFACTUUR = [
+  "Bouwbedrijf Testmans B.V.",
+  "Industrieweg 12, 1234 AB Voorbeeld",
+  "KvK 12345678 - BTW NL001234567B01 - IBAN NL91ABNA0417164300",
+  "",
+  "FACTUUR",
+  "Factuurnummer: TM-2026-0042",
+  "Factuurdatum: 12-11-2026",
+  "Vervaldatum: 26-11-2026",
+  "",
+  "Omschrijving                 Excl. BTW     BTW 21%     Incl. BTW",
+  "Tegelwerk badkamer           1.000,00      210,00      1.210,00",
+  "Kitwerk badkamer               100,00       21,00        121,00",
+  "",
+  "Totaal excl. BTW: EUR 1.100,00",
+  "BTW 21%: EUR 231,00",
+  "Totaal te betalen: EUR 1.331,00",
+];
 
 async function main() {
   const sleutels = await mgmt(`/projects/${REF}/api-keys?reveal=true`);
@@ -1658,6 +1732,421 @@ async function main() {
       p_role: "lezer",
     });
     ok(Boolean(uitnodigB.error), "B (bewerker) kan niet uitnodigen");
+
+    // --- AI-documentherkenning (fase 8) --------------------------------------
+    console.log("→ AI-documentherkenning");
+    await pA.goto(`${APP}/te-controleren/nieuw?bron=camera`);
+    await pA
+      .getByRole("heading", { name: "Bon fotograferen" })
+      .waitFor({ timeout: 20000 });
+    const aiAan =
+      (await pA.getByText("De AI-herkenning is nog niet ingesteld").count()) ===
+      0;
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/ai-uploaden.png`,
+        fullPage: true,
+      });
+    console.log(
+      aiAan
+        ? "  (AI is ingesteld: ook een echte herkenning)"
+        : "  (AI niet ingesteld: zonder-sleutel-pad en vast testvoorstel)",
+    );
+    const camera = pA.locator('input[type="file"]');
+    ok(
+      (await camera.getAttribute("capture")) === "environment" &&
+        !(await camera.getAttribute("accept")).includes("heic"),
+      "bon fotograferen opent op een telefoon de camera; alleen typen die de AI kan lezen",
+    );
+    const grotePng = maakPng(3000, 2000);
+    await camera.setInputFiles({
+      name: "bon-groot.png",
+      mimeType: "image/png",
+      buffer: grotePng,
+    });
+    await pA
+      .getByText("bon-groot.jpg", { exact: true })
+      .waitFor({ timeout: 60000 });
+    const { data: foto } = await clientA
+      .from("files")
+      .select("id, mime_type, size_bytes")
+      .eq("project_id", projectId)
+      .eq("original_name", "bon-groot.jpg")
+      .single();
+    ok(
+      foto.mime_type === "image/jpeg" &&
+        foto.size_bytes < 1024 * 1024 &&
+        grotePng.length > 5 * 1024 * 1024,
+      `grote foto (${(grotePng.length / 1048576).toFixed(1)} MB, 3000 × 2000) in de browser verkleind tot JPG van ${Math.round(foto.size_bytes / 1024)} kB`,
+    );
+    if (!aiAan) {
+      await pA.getByRole("button", { name: "Verder: zelf invoeren" }).click();
+      await pA.waitForURL(/\/documenten\/nieuw\?bestand=/, { timeout: 20000 });
+      ok(
+        new URL(pA.url()).searchParams.get("bestand") === foto.id &&
+          (await pA.getByRole("radio", { name: "Bon" }).isChecked()) &&
+          (await pA.getByText("bon-groot.jpg", { exact: true }).count()) === 1,
+        "zonder AI-sleutel: door naar zelf invoeren, met de foto al gekoppeld en soort bon",
+      );
+    }
+
+    // Vast testvoorstel, precies zoals de herkenning het opslaat, zodat het
+    // controleren en boeken ook zonder AI-sleutel getest wordt.
+    const testBestand = async (naam) => {
+      await pA.goto(`${APP}/documenten/nieuw`);
+      await pA.locator('input[type="file"]').setInputFiles({
+        name: naam,
+        mimeType: "application/pdf",
+        buffer: maakPdf(`Testdocument ${naam} ${sfx}`),
+      });
+      await pA.getByText(naam, { exact: true }).waitFor({ timeout: 30000 });
+      return pA.locator('input[name="bestandId"]').inputValue();
+    };
+    const sqlTekst = (w) => `'${String(w).replaceAll("'", "''")}'`;
+    const { data: badkamerCat } = await clientA
+      .from("categories")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("name", "Badkamer & toilet")
+      .single();
+    const w = (waarde, zekerheid = 0.97, bron = null) => ({
+      waarde,
+      zekerheid,
+      bron,
+    });
+    const testResultaat = {
+      is_document: true,
+      soort: w("factuur"),
+      leverancier: w("Tegelhandel Fixture B.V."),
+      leverancier_kvk: w("87654321"),
+      leverancier_iban: w("NL91 ABNA 0417 1643 00"),
+      leverancier_btw_nummer: w("NL123456789B01"),
+      documentnummer: w("TF-2026-118"),
+      documentdatum: w("2026-11-20", 0.72, "20-11-2026"),
+      vervaldatum: w(null, 0.2),
+      betaaltermijn_dagen: w(14, 0.9, "Betaling binnen 14 dagen"),
+      totaal_incl: w(302.5, 0.96, "Totaal EUR 302,50"),
+      totaal_btw: w(52.5),
+      btw_per_tarief: [{ tarief: 21, grondslag: 250, btw: 52.5 }],
+      verwijzing: w(null, 0),
+      contract_id: w(null, 0),
+      termijn_id: w(null, 0),
+      regels: [
+        {
+          omschrijving: "Wandtegels 30x60",
+          bedrag_incl: 242,
+          bedrag_excl: 200,
+          btw_tarief: 21,
+          categorie_id: badkamerCat.id,
+          ruimte_id: null,
+          contract_regel_id: null,
+          zekerheid: 0.95,
+          bron: "Wandtegels 30x60 242,00",
+        },
+        {
+          omschrijving: "Tegellijm",
+          bedrag_incl: 60.5,
+          bedrag_excl: 50,
+          btw_tarief: 21,
+          categorie_id: null,
+          ruimte_id: null,
+          contract_regel_id: null,
+          zekerheid: 0.9,
+          bron: "Tegellijm 60,50",
+        },
+      ],
+      opmerkingen: ["De datum is deels handgeschreven."],
+    };
+    const testPunten = [
+      {
+        soort: "ontbreekt",
+        veld: "regel-2",
+        tekst: "Regel 2: kies waar deze kosten bij horen.",
+      },
+      {
+        soort: "onzeker",
+        veld: "documentdatum",
+        tekst: "Datum: 72% zeker; controleer dit.",
+      },
+    ];
+    const bestand1 = await testBestand("tegelhandel-factuur.pdf");
+    const [voorstel1] = await sql(`
+      insert into public.document_extractions
+        (project_id, file_id, status, model, result, issues)
+      values ('${projectId}', '${bestand1}', 'te_controleren', 'e2e-testvoorstel',
+              ${sqlTekst(JSON.stringify(testResultaat))}::jsonb,
+              ${sqlTekst(JSON.stringify(testPunten))}::jsonb)
+      returning id`);
+
+    await pA.goto(`${APP}/te-controleren`);
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/ai-lijst.png`,
+        fullPage: true,
+      });
+    const voorstelLink = pA.getByRole("link", {
+      name: /Tegelhandel Fixture B\.V\./,
+    });
+    ok(
+      (await voorstelLink.count()) === 1 &&
+        normaal(await voorstelLink.innerText()).includes("€ 302,50") &&
+        normaal(await voorstelLink.innerText()).includes("2 punten"),
+      "AI-voorstel staat bij Te controleren, met bedrag en aantal punten",
+    );
+    await pA.goto(`${APP}/dashboard`);
+    ok(
+      (await pA
+        .getByRole("region", { name: "Te controleren" })
+        .getByText("Tegelhandel Fixture B.V.")
+        .count()) === 1,
+      "dashboard toont het voorstel bij Te controleren",
+    );
+
+    await pA.goto(`${APP}/te-controleren/${voorstel1.id}`);
+    await pA
+      .getByRole("heading", { name: "Voorstel controleren" })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA.locator("iframe").count()) === 1 &&
+        (await pA.getByText("2 punten om te controleren").count()) === 1 &&
+        (await pA.getByText("De datum is deels handgeschreven.").count()) ===
+          1 &&
+        (await pA.getByText("Datum: 72% zeker; controleer dit.").count()) === 2,
+      "controlescherm: origineel ernaast, aandachtspunten (ook bij het veld) en opmerkingen van de AI",
+    );
+    ok(
+      (await pA.getByLabel("Factuurnummer").inputValue()) === "TF-2026-118" &&
+        (await pA.getByLabel("Datum", { exact: true }).inputValue()) ===
+          "20-11-2026" &&
+        (await pA
+          .getByLabel("Uiterlijk betalen op (optioneel)")
+          .inputValue()) === "04-12-2026" &&
+        (await pA
+          .getByLabel("Totaal op het document", { exact: true })
+          .inputValue()) === "302,50" &&
+        (await pA.getByLabel("Leverancier", { exact: true }).inputValue()) ===
+          "__nieuw__" &&
+        (await pA.getByLabel("Naam nieuwe leverancier").inputValue()) ===
+          "Tegelhandel Fixture B.V." &&
+        (await pA.getByLabel("Hoort bij regel 1").inputValue()) ===
+          `k:${badkamerCat.id}` &&
+        (await pA.getByLabel("Bedrag regel 1").inputValue()) === "242,00" &&
+        (await pA.getByLabel("Bedrag regel 2").inputValue()) === "60,50" &&
+        (await pA.locator('input[type="file"]').count()) === 0,
+      "formulier vooringevuld: nummer, datum, vervaldatum (datum + 14 dagen), totaal, nieuwe leverancier en regels; het bestand ligt vast",
+    );
+    if (SCREENSHOTS) {
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/ai-controleren.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 390, height: 844 });
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/ai-controleren-mobiel.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 1440, height: 900 });
+    }
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA
+      .getByText("Kies bij regel 2 waar de kosten bij horen")
+      .waitFor({ timeout: 20000 });
+    ok(true, "niet geboekt zolang een regel nergens bij hoort");
+    await pA
+      .getByLabel("Hoort bij regel 2")
+      .selectOption({ label: "Afbouw › Badkamer & toilet" });
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const aiDocument = idUitUrl(pA);
+    const { data: aiDoc } = await clientA
+      .from("cost_documents")
+      .select(
+        "status, source, document_number, document_date, due_date, stated_total_incl_cents, file_id, reviewed_by, supplier_id, cost_lines (amount_incl_cents)",
+      )
+      .eq("id", aiDocument)
+      .single();
+    ok(
+      aiDoc.status === "geboekt" &&
+        aiDoc.source === "ai" &&
+        aiDoc.document_number === "TF-2026-118" &&
+        aiDoc.document_date === "2026-11-20" &&
+        aiDoc.due_date === "2026-12-04" &&
+        aiDoc.stated_total_incl_cents === 30250 &&
+        aiDoc.file_id === bestand1 &&
+        aiDoc.reviewed_by === ids[0] &&
+        aiDoc.cost_lines.length === 2,
+      "na bevestiging geboekt als document (bron AI, gecontroleerd door A), het bestand één keer bewaard",
+    );
+    const { data: nieuweLev } = await clientA
+      .from("suppliers")
+      .select("name, kvk_number, iban, vat_number")
+      .eq("id", aiDoc.supplier_id)
+      .single();
+    ok(
+      nieuweLev.name === "Tegelhandel Fixture B.V." &&
+        nieuweLev.kvk_number === "87654321" &&
+        nieuweLev.iban === "NL91ABNA0417164300" &&
+        nieuweLev.vat_number === "NL123456789B01",
+      "nieuwe leverancier aangemaakt met KvK, IBAN en BTW-nummer van het document",
+    );
+    const { data: verwerkt } = await clientB
+      .from("document_extractions")
+      .select("status, cost_document_id, reviewed_by")
+      .eq("id", voorstel1.id)
+      .single();
+    ok(
+      verwerkt.status === "verwerkt" &&
+        verwerkt.cost_document_id === aiDocument &&
+        verwerkt.reviewed_by === ids[0],
+      "voorstel verwerkt en gekoppeld aan het document (ook zo te zien voor B)",
+    );
+    await pA.goto(`${APP}/te-controleren/${voorstel1.id}`);
+    await pA.waitForURL(`**/documenten/${aiDocument}`, { timeout: 20000 });
+    await pA.goto(`${APP}/te-controleren`);
+    ok(
+      (await pA.getByRole("link", { name: /Tegelhandel Fixture/ }).count()) ===
+        0,
+      "verwerkt voorstel opent het document en staat niet meer bij Te controleren",
+    );
+
+    // Mislukt voorstel: zelf invoeren; boeken vraagt nummer en totaal; weggooien.
+    const bestand2 = await testBestand("onleesbaar.pdf");
+    const { data: bestand2Info } = await clientA
+      .from("files")
+      .select("storage_path")
+      .eq("id", bestand2)
+      .single();
+    const [voorstel2] = await sql(`
+      insert into public.document_extractions
+        (project_id, file_id, status, model, error)
+      values ('${projectId}', '${bestand2}', 'mislukt', 'e2e-testvoorstel',
+              'Het uitlezen duurde te lang. Probeer het opnieuw.')
+      returning id`);
+    await pA.goto(`${APP}/te-controleren/${voorstel2.id}`);
+    await pA
+      .getByText("Het uitlezen duurde te lang. Probeer het opnieuw.")
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA.getByRole("heading", { name: "Zelf invoeren" }).count()) ===
+        1 &&
+        (await pA.getByRole("button", { name: "Opnieuw uitlezen" }).count()) ===
+          (aiAan ? 1 : 0),
+      "mislukt voorstel: melding en zelf invoeren (opnieuw uitlezen alleen als de AI is ingesteld)",
+    );
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA
+      .getByText("Vul de gemarkeerde velden in om te boeken")
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA.getByText("Vul het nummer van het document in.").count()) ===
+        1 &&
+        (await pA.getByText("Vul het totaal van het document in").count()) ===
+          1,
+      "boeken vanuit een voorstel vraagt om documentnummer en totaal",
+    );
+    await pA.getByLabel("Ja, verwijder dit voorstel.").check();
+    await pA.getByRole("button", { name: "Voorstel verwijderen" }).click();
+    await pA.waitForURL((u) => u.pathname === "/te-controleren", {
+      timeout: 20000,
+    });
+    const { data: voorstel2Na } = await clientA
+      .from("document_extractions")
+      .select("id")
+      .eq("id", voorstel2.id);
+    const { data: bestand2Na } = await clientA
+      .from("files")
+      .select("id")
+      .eq("id", bestand2);
+    const [opslag2] = await sql(
+      `select count(*) as n from storage.objects where bucket_id = 'documenten' and name = ${sqlTekst(bestand2Info.storage_path)}`,
+    );
+    ok(
+      voorstel2Na.length === 0 &&
+        bestand2Na.length === 0 &&
+        Number(opslag2.n) === 0,
+      "voorstel verwijderd, met het bestand uit de opslag (hoorde nergens anders bij)",
+    );
+
+    // Toegang: B ziet dezelfde voorstellen, C niets.
+    const aVoorstellen = await clientA
+      .from("document_extractions")
+      .select("id, status, result, issues")
+      .order("created_at");
+    const bVoorstellen = await clientB
+      .from("document_extractions")
+      .select("id, status, result, issues")
+      .order("created_at");
+    const cVoorstellen = await clientC
+      .from("document_extractions")
+      .select("id");
+    const cWijzigt = await clientC
+      .from("document_extractions")
+      .update({ status: "afgewezen" })
+      .eq("project_id", projectId)
+      .select();
+    ok(
+      aVoorstellen.data.length >= 1 &&
+        JSON.stringify(aVoorstellen.data) ===
+          JSON.stringify(bVoorstellen.data) &&
+        cVoorstellen.data.length === 0 &&
+        !cWijzigt.error &&
+        cWijzigt.data.length === 0,
+      "A en B zien dezelfde AI-voorstellen; C ziet en wijzigt er geen",
+    );
+    await pC.goto(`${APP}/te-controleren/${voorstel1.id}`);
+    await pC.waitForURL("**/welkom", { timeout: 20000 });
+    ok(true, "C (geen toegang) opent het controlescherm niet");
+
+    // Met AI-sleutel: een echte herkenning van een testfactuur (niet boeken).
+    if (aiAan) {
+      await pA.goto(`${APP}/te-controleren/nieuw`);
+      await pA.locator('input[type="file"]').setInputFiles({
+        name: "testfactuur-ai.pdf",
+        mimeType: "application/pdf",
+        buffer: maakPdf(TESTFACTUUR),
+      });
+      await pA
+        .getByText("testfactuur-ai.pdf", { exact: true })
+        .waitFor({ timeout: 30000 });
+      const start = Date.now();
+      await pA.getByRole("button", { name: "Uitlezen" }).click();
+      await pA.waitForURL(uuidEind("/te-controleren"), { timeout: 90000 });
+      await pA
+        .getByRole("heading", { name: "Gegevens" })
+        .waitFor({ timeout: 20000 });
+      const duur = Math.round((Date.now() - start) / 1000);
+      if (SCREENSHOTS)
+        await pA.screenshot({
+          path: `${SCREENSHOTS}/ai-echt.png`,
+          fullPage: true,
+        });
+      ok(
+        (await pA.getByLabel("Factuurnummer").inputValue()) ===
+          "TM-2026-0042" &&
+          (await pA.getByLabel("Datum", { exact: true }).inputValue()) ===
+            "12-11-2026" &&
+          (await pA
+            .getByLabel("Uiterlijk betalen op (optioneel)")
+            .inputValue()) === "26-11-2026" &&
+          (await pA
+            .getByLabel("Totaal op het document", { exact: true })
+            .inputValue()) === "1.331,00",
+        `echte herkenning (${duur} s): nummer, datum, vervaldatum en totaal goed gelezen`,
+      );
+      ok(
+        (await pA.getByLabel("Bedrag regel 1").inputValue()) === "1.210,00" &&
+          (await pA.getByLabel("Bedrag regel 2").inputValue()) === "121,00" &&
+          (
+            await pA.getByLabel("Naam nieuwe leverancier").inputValue()
+          ).includes("Testmans"),
+        "echte herkenning: twee regels met de juiste bedragen en de leverancier",
+      );
+      await pA.getByLabel("Ja, verwijder dit voorstel.").check();
+      await pA.getByRole("button", { name: "Voorstel verwijderen" }).click();
+      await pA.waitForURL((u) => u.pathname === "/te-controleren", {
+        timeout: 20000,
+      });
+    }
 
     const anon = createClient(URL_SB, publishable, geenSessie);
     const anonLees = await anon.from("projects").select("id");
