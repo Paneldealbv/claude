@@ -111,7 +111,12 @@ async function main() {
     }
     ok(ids.length === 3, "drie testaccounts aangemaakt (e-mail bevestigd)");
 
-    browser = await chromium.launch();
+    // Online adres testen vanachter een proxy: de browser via die proxy laten gaan.
+    const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const lokaal = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(APP);
+    browser = await chromium.launch(
+      proxy && !lokaal ? { proxy: { server: proxy } } : {},
+    );
     const pagina = async (acc) => {
       const ctx = await browser.newContext({
         viewport: { width: 1440, height: 900 },
