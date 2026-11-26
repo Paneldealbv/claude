@@ -1,6 +1,6 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 5 · 26-11-2026 · fase 5: offertes, contracten en bestanden (§ 3.11–3.12).
+Versie 6 · 26-11-2026 · fase 6: facturen, bonnen en betalingen (§ 3.13).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -355,6 +355,40 @@ Keuzes die bij het programmeren concreet zijn gemaakt:
 - Nog te doen (fase 10): bestanden opruimen van projecten die worden
   verwijderd (bijv. als het laatste lid zijn account opheft).
 
+### 3.13 Facturen, bonnen en betalingen (vastgelegd in fase 6)
+
+- **Soorten**: factuur, termijnfactuur, eindfactuur, creditnota en bon. Elk
+  document heeft regels; elke regel hoort bij een **contractregel**, een
+  **heel contract** (naar rato over de contractregels) of is een **losse
+  kostenpost in een categorie**. Zo telt een factuur altijd binnen het contract
+  en nooit erbovenop (§ 3.3): een offerte van € 15.000 met drie termijnfacturen
+  van € 5.000 blijft € 15.000.
+- **Eén bon, meerdere regels**: een bon wordt over categorieën verdeeld; het
+  originele bestand wordt één keer bewaard. Per regel kunnen ruimtes worden
+  gekozen (gelijk verdeeld); zonder keuze gelden bij een contractregel de
+  ruimtes van het contract.
+- **Concept, te controleren, geboekt, vervallen**: alleen geboekte documenten
+  tellen mee. Boeken kan alleen als er regels zijn en, als het totaal op het
+  document is ingevuld, de regels daar precies op uitkomen (app én database).
+  De database legt vast wie boekte en wanneer. "Te controleren" toont alles wat
+  nog niet geboekt is (vanaf fase 8 ook AI-voorstellen).
+- **Opslaan in één keer** via `save_cost_document` (§ 4): document, regels en
+  ruimteverdeling, of niets. Daardoor kan ook een geboekt en (deels) betaald
+  document worden gecorrigeerd, zolang het daarna klopt.
+- **Termijn- en eindfactuur** worden het makkelijkst ingevoerd vanaf het
+  contract: soort, contract, termijn en het nog te factureren bedrag staan dan
+  al ingevuld. Zonder gekozen leverancier geldt die van het contract.
+- **Creditnota**: bedragen worden ingevuld zoals op het papier en negatief
+  opgeslagen; een terugbetaling is ook negatief.
+- **Betalingen**: alleen op geboekte documenten, in delen mogelijk, samen nooit
+  meer dan het totaal. Optioneel uit welke financieringsbron (nooit uit een
+  hypotheek die in delen is gesplitst: dan het deel, bijv. het bouwdepot).
+  Betaalstatus: open, deels, betaald of te laat (vervaldatum voorbij).
+- **Dubbel invoeren** wordt herkend: hetzelfde bestand (SHA-256) bij een ander
+  document, en hetzelfde factuurnummer bij dezelfde leverancier.
+- **Terugzetten of laten vervallen** kan alleen zolang er geen betalingen zijn;
+  verwijderen haalt document, regels en betalingen in één keer weg.
+
 ---
 
 ## 4. Database-tabellen
@@ -419,7 +453,14 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 - Ruimteverdeling per regel telt op tot precies 100%.
 - Uniek per project: leverancier + documentnummer (voor facturen), en sha256 van
   bestanden.
-- Betalingen op een document zijn samen nooit meer dan het documenttotaal.
+- Betalingen op een document zijn samen nooit meer dan het documenttotaal,
+  en alleen mogelijk op een geboekt document.
+- Een geboekt document heeft minstens één regel; is het totaal op het document
+  ingevuld, dan tellen de regels daar precies op uit. Bij boeken legt de
+  database vast wie en wanneer.
+- `save_cost_document` en `delete_cost_document` (0011): document met regels,
+  ruimteverdeling en betalingen in één transactie, met de rechten van de
+  gebruiker (RLS blijft gelden).
 - Row Level Security op elke tabel: lezen voor alle leden, schrijven alleen voor
   `eigenaar` en `bewerker`. Leden en uitnodigingen beheert alleen de `eigenaar`.
 
@@ -505,7 +546,7 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 3. Datamodel + rekenlogica ✓            | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
 | 4. Categorieën, ruimtes, budget ✓       | Beheer en budgetpagina                                                                                                       |
 | 5. Leveranciers, offertes, contracten ✓ | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
-| 6. Documenten en betalingen             | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
+| 6. Documenten en betalingen ✓           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
 | 7. Dashboard en rapportages             | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
 | 8. AI-documentherkenning                | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
 | 9. Financiering                         | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |

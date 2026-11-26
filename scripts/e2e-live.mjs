@@ -1008,6 +1008,394 @@ async function main() {
       "C kan het bestand niet openen of downloaden",
     );
 
+    // --- Fase 6: facturen, bonnen, creditnota's en betalingen -----------------
+    console.log("→ Facturen, bonnen en betalingen");
+    const normaal = (t) => t.replace(/\s+/g, " ");
+
+    // Termijnfactuur via het termijnschema van het contract.
+    await pA.goto(`${APP}/contracten/${contractId}`);
+    await pA
+      .getByRole("link", { name: "Factuur voor termijn 1 invoeren" })
+      .click();
+    await pA.waitForURL(/\/documenten\/nieuw\?/, { timeout: 20000 });
+    ok(
+      (await pA.getByRole("radio", { name: "Termijnfactuur" }).isChecked()) &&
+        (await pA.getByLabel("Contract", { exact: true }).inputValue()) ===
+          contractId &&
+        (await pA.getByLabel("Omschrijving regel 1").inputValue()) ===
+          "Termijn 1: Aanbetaling" &&
+        (await pA.getByLabel("Bedrag regel 1").inputValue()) === "8.100,00",
+      "termijnfactuur vanaf de termijn: soort, contract, termijn en bedrag al ingevuld",
+    );
+    await pA.getByLabel("Factuurnummer").fill("F-2026-001");
+    await pA.getByLabel("Datum", { exact: true }).fill("10-11-2026");
+    await pA.getByLabel("Uiterlijk betalen op (optioneel)").fill("24-11-2026");
+    await pA.getByLabel("Totaal op het document (optioneel)").fill("8.100");
+    await pA
+      .getByText("Klopt met het totaal op het document")
+      .waitFor({ timeout: 20000 });
+    const factuurPdf = maakPdf("Factuur termijn 1");
+    await pA.locator('input[type="file"]').setInputFiles({
+      name: "factuur-termijn-1.pdf",
+      mimeType: "application/pdf",
+      buffer: factuurPdf,
+    });
+    await pA
+      .getByText("factuur-termijn-1.pdf", { exact: true })
+      .waitFor({ timeout: 30000 });
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/document-nieuw.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const termijnFactuur = idUitUrl(pA);
+    const { data: tf } = await clientA
+      .from("cost_documents")
+      .select(
+        "status, reviewed_by, booked_at, contract_id, installment_id, due_date, file_id, cost_lines (contract_id, amount_incl_cents)",
+      )
+      .eq("id", termijnFactuur)
+      .single();
+    ok(
+      tf.status === "geboekt" &&
+        tf.reviewed_by === ids[0] &&
+        tf.booked_at &&
+        tf.contract_id === contractId &&
+        tf.installment_id &&
+        tf.due_date === "2026-11-24" &&
+        tf.file_id &&
+        tf.cost_lines.length === 1 &&
+        tf.cost_lines[0].contract_id === contractId &&
+        tf.cost_lines[0].amount_incl_cents === 810000,
+      "termijnfactuur in één keer geboekt (door A, met termijn, PDF en regel op het contract)",
+    );
+    ok(
+      (await pA.getByText("Te laat", { exact: true }).count()) >= 1,
+      "vervaldatum verstreken: de factuur staat op te laat",
+    );
+
+    // Geen dubbeltelling: de factuur valt binnen het contract.
+    await openCategorie(pA, "Keuken");
+    ok(
+      (await tegelTekst(pA, "Prognose")).includes("€ 27.000"),
+      "Keuken blijft € 27.000: de termijnfactuur telt binnen het contract, niet erbovenop",
+    );
+    await pA.goto(`${APP}/contracten/${contractId}`);
+    ok(
+      (await tegelTekst(pA, "Gefactureerd")).includes("€ 8.100") &&
+        normaal(
+          await pA.locator("ol li", { hasText: "Aanbetaling" }).innerText(),
+        ).includes("Gefactureerd") &&
+        (await pA
+          .getByRole("region", { name: "Facturen" })
+          .getByRole("link", { name: /Keukenstudio Noord/ })
+          .count()) === 1,
+      "contract: € 8.100 gefactureerd, termijn 1 gefactureerd, factuur in de lijst",
+    );
+
+    // Betalen in twee delen.
+    await pA.goto(`${APP}/documenten/${termijnFactuur}`);
+    const betaalForm = pA.locator("form", {
+      has: pA.getByRole("button", { name: "Betaling vastleggen" }),
+    });
+    ok(
+      (await betaalForm.getByLabel("Bedrag", { exact: true }).inputValue()) ===
+        "8.100,00",
+      "betaling: openstaand bedrag staat al ingevuld",
+    );
+    await betaalForm.getByLabel("Bedrag", { exact: true }).fill("5.000");
+    await betaalForm
+      .getByRole("button", { name: "Betaling vastleggen" })
+      .click();
+    await pA.getByText("Betaling vastgelegd.").waitFor({ timeout: 20000 });
+    await betaalForm.getByLabel("Bedrag", { exact: true }).fill("3.100");
+    await betaalForm
+      .getByRole("button", { name: "Betaling vastleggen" })
+      .click();
+    await pA.getByText("Volledig betaald.").waitFor({ timeout: 20000 });
+    const { data: betalingen } = await clientA
+      .from("payments")
+      .select("amount_cents")
+      .eq("cost_document_id", termijnFactuur);
+    ok(
+      betalingen
+        .map((b) => b.amount_cents)
+        .sort((a, b) => a - b)
+        .join() === "310000,500000" &&
+        (await pA.getByText("Betaald", { exact: true }).count()) >= 1,
+      "in twee delen betaald (€ 5.000 + € 3.100): status betaald",
+    );
+    const teveel = await clientA.from("payments").insert({
+      project_id: projectId,
+      cost_document_id: termijnFactuur,
+      amount_cents: 1,
+      paid_on: "2026-11-26",
+    });
+    ok(Boolean(teveel.error), "meer betalen dan de factuur wordt geweigerd");
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/document-detail.png`,
+        fullPage: true,
+      });
+
+    // Geboekte, betaalde factuur corrigeren (in één keer, betalingen blijven).
+    await pA.getByRole("link", { name: "Bewerken" }).click();
+    await pA.waitForURL(/\/bewerken$/, { timeout: 20000 });
+    await pA.getByLabel("Uiterlijk betalen op (optioneel)").fill("30-11-2026");
+    await pA.getByRole("button", { name: "Wijzigingen opslaan" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const { data: tf2 } = await clientA
+      .from("cost_documents")
+      .select("status, due_date, payments (amount_cents)")
+      .eq("id", termijnFactuur)
+      .single();
+    ok(
+      tf2.status === "geboekt" &&
+        tf2.due_date === "2026-11-30" &&
+        tf2.payments.length === 2,
+      "geboekte en betaalde factuur bewerkt; blijft geboekt, betalingen blijven",
+    );
+
+    // Eén bon verdeeld over twee categorieën, met een ruimte.
+    await pA.goto(`${APP}/documenten/nieuw?type=bon`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption("__nieuw__");
+    await pA.getByLabel("Naam nieuwe leverancier").fill("Bouwmarkt Zuid");
+    await pA.getByLabel("Totaal op het document (optioneel)").fill("190,50");
+    await pA.getByLabel("Omschrijving regel 1").fill("Tegels badkamer");
+    await pA
+      .getByLabel("Hoort bij regel 1")
+      .selectOption({ label: "Afbouw › Badkamer & toilet" });
+    await pA.getByLabel("Bedrag regel 1").fill("150,50");
+    await pA.getByRole("button", { name: "Ruimtes regel 1" }).click();
+    await pA.getByLabel("Badkamer", { exact: true }).check();
+    await pA.getByRole("button", { name: "Regel toevoegen" }).click();
+    await pA.getByLabel("Omschrijving regel 2").fill("Verf woonkamer");
+    await pA
+      .getByLabel("Hoort bij regel 2")
+      .selectOption({ label: "Afbouw › Wanden & plafonds" });
+    await pA.getByLabel("Bedrag regel 2").fill("40");
+    await pA
+      .getByText("Klopt met het totaal op het document")
+      .waitFor({ timeout: 20000 });
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/bon-nieuw.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const bonId = idUitUrl(pA);
+    const { data: bon } = await clientA
+      .from("cost_lines")
+      .select(
+        "description, amount_incl_cents, categories (name), room_allocations (share_bp, rooms (name))",
+      )
+      .eq("cost_document_id", bonId)
+      .order("sort_order");
+    ok(
+      bon.length === 2 &&
+        bon[0].categories?.name === "Badkamer & toilet" &&
+        bon[0].amount_incl_cents === 15050 &&
+        bon[0].room_allocations.length === 1 &&
+        bon[0].room_allocations[0].rooms?.name === "Badkamer" &&
+        bon[1].categories?.name === "Wanden & plafonds" &&
+        bon[1].amount_incl_cents === 4000,
+      "één bon over twee categorieën verdeeld (met ruimte Badkamer), één keer bewaard",
+    );
+    await openCategorie(pA, "Badkamer & toilet");
+    ok(
+      normaal(
+        await pA.getByRole("region", { name: "Losse kosten" }).innerText(),
+      ).includes("€ 150,50"),
+      "categorie Badkamer & toilet toont het deel van de bon (€ 150,50)",
+    );
+
+    // Totaal klopt niet: niet boeken, wel als concept; daarna verwijderen.
+    await pA.goto(`${APP}/documenten/nieuw`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption({ label: "Bouwmarkt Zuid" });
+    await pA.getByLabel("Factuurnummer").fill("BZ-77");
+    await pA.getByLabel("Totaal op het document (optioneel)").fill("100");
+    await pA.getByLabel("Omschrijving regel 1").fill("Kitten en lijm");
+    await pA
+      .getByLabel("Hoort bij regel 1")
+      .selectOption({ label: "Afbouw › Badkamer & toilet" });
+    await pA.getByLabel("Bedrag regel 1").fill("90");
+    await pA
+      .getByText(/Nog .* te verdelen tot het totaal op het document/)
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    const verschil = pA.getByText(/De regels tellen op tot/);
+    await verschil.waitFor({ timeout: 20000 });
+    ok(
+      normaal(await verschil.innerText()).includes(
+        "€ 90,00, maar op het document staat € 100,00",
+      ),
+      "boeken geweigerd als de regels niet optellen tot het totaal op het document",
+    );
+    await pA.getByRole("button", { name: "Opslaan als concept" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const conceptId = idUitUrl(pA);
+    await pA.goto(`${APP}/te-controleren`);
+    ok(
+      (await pA.getByRole("link", { name: /Bouwmarkt Zuid/ }).count()) === 1 &&
+        normaal(
+          await pA
+            .getByRole("link", { name: /Te controleren/ })
+            .first()
+            .innerText(),
+        ).includes("1"),
+      "concept staat bij Te controleren (met teller in het menu) en telt niet mee",
+    );
+    await pA.goto(`${APP}/documenten/${conceptId}`);
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA
+      .getByText("De som van de regels wijkt af van het totaal op het document")
+      .waitFor({ timeout: 20000 });
+    ok(true, "ook de database weigert boeken als het totaal niet klopt");
+    await pA.getByLabel(/Ja, verwijder dit document/).check();
+    await pA.getByRole("button", { name: "Document verwijderen" }).click();
+    await pA.waitForURL(`${APP}/documenten`, { timeout: 20000 });
+    ok(
+      (
+        await clientA
+          .from("cost_documents")
+          .select("id", { count: "exact", head: true })
+          .eq("id", conceptId)
+      ).count === 0,
+      "concept verwijderd",
+    );
+
+    // Dubbel bestand en dubbel factuurnummer worden herkend.
+    await pA.goto(`${APP}/documenten/nieuw`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption({ label: "Keukenstudio Noord" });
+    await pA.getByLabel("Factuurnummer").fill("F-2026-001");
+    await pA.getByLabel("Omschrijving regel 1").fill("Nogmaals");
+    await pA
+      .getByLabel("Hoort bij regel 1")
+      .selectOption({ label: "Afbouw › Keuken" });
+    await pA.getByLabel("Bedrag regel 1").fill("100");
+    await pA.locator('input[type="file"]').setInputFiles({
+      name: "kopie-factuur.pdf",
+      mimeType: "application/pdf",
+      buffer: factuurPdf,
+    });
+    await pA
+      .getByText("Dit bestand stond al in je project", { exact: false })
+      .waitFor({ timeout: 30000 });
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA
+      .getByText(/Dit bestand is al ingevoerd: termijnfactuur F-2026-001/)
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await pA
+        .getByRole("link", { name: "Bekijk het bestaande document" })
+        .getAttribute("href")) === `/documenten/${termijnFactuur}`,
+      "zelfde PDF nogmaals: geweigerd, met link naar het bestaande document",
+    );
+    await pA.getByRole("button", { name: "Bestand loskoppelen" }).click();
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA
+      .getByText(
+        "Er staat al een document met dit nummer van deze leverancier",
+        {
+          exact: false,
+        },
+      )
+      .waitFor({ timeout: 20000 });
+    ok(true, "zelfde factuurnummer bij dezelfde leverancier: geweigerd");
+
+    // Creditnota op een contractregel; terugbetaling ontvangen.
+    await pA.goto(`${APP}/documenten/nieuw?type=creditnota`);
+    await pA
+      .getByLabel("Leverancier", { exact: true })
+      .selectOption({ label: "Keukenstudio Noord" });
+    await pA.getByLabel("Factuurnummer").fill("C-001");
+    await pA.getByLabel("Contract (optioneel)").selectOption(contractId);
+    await pA.getByLabel("Omschrijving regel 1").fill("Korting werkblad");
+    await pA
+      .getByLabel("Hoort bij regel 1")
+      .selectOption({ label: "Keukenblok met werkblad (Afbouw › Keuken)" });
+    await pA.getByLabel("Bedrag regel 1").fill("350");
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const creditnota = idUitUrl(pA);
+    const terugForm = pA.locator("form", {
+      has: pA.getByRole("button", { name: "Terugbetaling vastleggen" }),
+    });
+    await terugForm
+      .getByRole("button", { name: "Terugbetaling vastleggen" })
+      .click();
+    // Daarna staat er niets meer open: het formulier verdwijnt.
+    await pA.getByText("Volledig betaald.").waitFor({ timeout: 20000 });
+    const { data: cn } = await clientA
+      .from("cost_documents")
+      .select("cost_lines (amount_incl_cents), payments (amount_cents)")
+      .eq("id", creditnota)
+      .single();
+    ok(
+      cn.cost_lines[0].amount_incl_cents === -35000 &&
+        cn.payments[0].amount_cents === -35000,
+      "creditnota en terugbetaling als min-bedrag opgeslagen (−€ 350)",
+    );
+    await pA.goto(`${APP}/contracten/${contractId}`);
+    ok(
+      (await tegelTekst(pA, "Gefactureerd")).includes("€ 7.750") &&
+        (await tegelTekst(pA, "Betaald")).includes("€ 7.750"),
+      "contract: gefactureerd en betaald € 8.100 − € 350 = € 7.750",
+    );
+    await openCategorie(pA, "Keuken");
+    ok(
+      (await tegelTekst(pA, "Prognose")).includes("€ 27.000"),
+      "Keuken blijft € 27.000 (contract is nog niet afgerond)",
+    );
+
+    // Overzicht.
+    await pA.goto(`${APP}/documenten`);
+    const samenvatting = normaal(
+      await pA.getByRole("region", { name: "Samenvatting" }).innerText(),
+    );
+    ok(
+      samenvatting.includes("Gefactureerd € 7.941") &&
+        samenvatting.includes("Betaald € 7.750") &&
+        samenvatting.includes("Nog te betalen € 191"),
+      "overzicht: gefactureerd € 7.940,50, betaald € 7.750, nog te betalen € 190,50",
+    );
+    await pA.goto(`${APP}/documenten?status=open`);
+    ok(
+      (await pA.getByRole("link", { name: /Bouwmarkt Zuid/ }).count()) === 1 &&
+        (await pA.getByRole("link", { name: /Keukenstudio Noord/ }).count()) ===
+          0,
+      "filter 'nog te betalen' toont alleen de bon",
+    );
+    if (SCREENSHOTS) {
+      await pA.goto(`${APP}/documenten`);
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/documenten.png`,
+        fullPage: true,
+      });
+    }
+
+    // B ziet dezelfde documenten; C niets.
+    await pB.goto(`${APP}/documenten/${termijnFactuur}`);
+    await pB
+      .getByRole("heading", { level: 1, name: "Termijnfactuur F-2026-001" })
+      .waitFor({ timeout: 20000 });
+    ok(
+      (await fetch(await pB.locator("iframe").getAttribute("src"))).ok,
+      "B ziet dezelfde factuur, inclusief PDF",
+    );
+    await pC.goto(`${APP}/documenten/${termijnFactuur}`);
+    await pC.waitForURL("**/welkom", { timeout: 20000 });
+    ok(true, "C ziet de factuur van A niet");
+
     // B ziet hetzelfde budget; C helemaal niets.
     await pB.goto(`${APP}/budget`);
     await pB.getByText("€ 25.000").first().waitFor({ timeout: 20000 });
@@ -1046,6 +1434,9 @@ async function main() {
       "contract_changes",
       "contract_installments",
       "room_allocations",
+      "cost_documents",
+      "cost_lines",
+      "payments",
     ];
     const zicht = async (c) => {
       const uit = {};
@@ -1060,11 +1451,11 @@ async function main() {
     const zichtB = await zicht(clientB);
     ok(
       JSON.stringify(zichtA) === JSON.stringify(zichtB),
-      "A en B zien exact dezelfde gegevens (project, leden, budget, ruimtes, leveranciers, bestanden, offertes, contracten, meerwerk, termijnen)",
+      "A en B zien exact dezelfde gegevens (project, leden, budget, ruimtes, leveranciers, bestanden, offertes, contracten, meerwerk, termijnen, facturen, betalingen)",
     );
     ok(
       zichtA.categories.some((c) => c.name === "API-categorie") &&
-        zichtA.suppliers.length === 4 &&
+        zichtA.suppliers.length === 5 &&
         zichtA.budget_lines.length === 2 &&
         zichtA.rooms.length === 12 &&
         zichtA.quotes.length === 1 &&
@@ -1072,8 +1463,11 @@ async function main() {
         zichtA.contract_lines.length === 2 &&
         zichtA.contract_changes.length === 2 &&
         zichtA.contract_installments.length === 2 &&
-        zichtA.files.length === 1,
-      "alle toevoegingen zichtbaar (budget, ruimtes, offertes, contracten)",
+        zichtA.files.length === 2 &&
+        zichtA.cost_documents.length === 3 &&
+        zichtA.cost_lines.length === 4 &&
+        zichtA.payments.length === 3,
+      "alle toevoegingen zichtbaar (budget, ruimtes, offertes, contracten, facturen, betalingen)",
     );
 
     const zichtC = await zicht(clientC);
@@ -1092,6 +1486,9 @@ async function main() {
         zichtC.contract_changes.length === 0 &&
         zichtC.contract_installments.length === 0 &&
         zichtC.room_allocations.length === 0 &&
+        zichtC.cost_documents.length === 0 &&
+        zichtC.cost_lines.length === 0 &&
+        zichtC.payments.length === 0 &&
         zichtC.profiles.length === 1,
       "C ziet niets van het project (alleen het eigen profiel)",
     );

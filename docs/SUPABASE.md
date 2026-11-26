@@ -7,7 +7,7 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | Onderdeel                    | Waar                                             |
 | ---------------------------- | ------------------------------------------------ |
 | Database, Auth, Storage      | Supabase-project in **eu-central-1 (Frankfurt)** |
-| Databasestructuur            | `supabase/migrations/*.sql` (8 migraties)        |
+| Databasestructuur            | `supabase/migrations/*.sql` (11 migraties)       |
 | Beveiligingstests (lokaal)   | `npm run test:db` → `supabase/tests/`            |
 | Migraties en Auth instellen  | `scripts/supabase-beheer.mjs` (Management API)   |
 | Supabase-koppeling in de app | `lib/supabase/`, `proxy.ts`, `lib/auth.ts`       |
@@ -60,6 +60,12 @@ in de code of in GitHub.
   lidmaatschappen zijn niet direct te wijzigen.
 - **Hulpfuncties** staan in het schema `private` (niet via de API bereikbaar),
   met een vast `search_path`.
+- **Documenten opslaan** (0011): `save_cost_document` en
+  `delete_cost_document` doen document, regels, ruimteverdeling en
+  betalingen in één transactie. Ze draaien met de rechten van de gebruiker
+  (`security invoker`), dus Row Level Security blijft gelden; alleen
+  ingelogde gebruikers mogen ze aanroepen. Bij boeken legt de database zelf
+  vast wie (de ingelogde gebruiker) en wanneer.
 - **Opslag**: privé bucket `documenten` (max 20 MB, PDF en foto's). Bestanden
   staan onder `<project-id>/…` en zijn alleen voor leden van dat project.
 
@@ -67,7 +73,7 @@ in de code of in GitHub.
 
 `npm run test:db` start een tijdelijke Postgres, bootst de Supabase-rollen
 na (inclusief de strengere standaardrechten van nieuwe Supabase-projecten),
-voert alle migraties uit en controleert 93 punten, waaronder:
+voert alle migraties uit en controleert 111 punten, waaronder:
 
 - A (eigenaar), B (bewerker) en D (lezer) zien **exact dezelfde gegevens**
   in alle tabellen;
@@ -80,15 +86,19 @@ voert alle migraties uit en controleert 93 punten, waaronder:
 - ingelogde gebruikers kunnen geen tabel leegmaken (TRUNCATE) en geen
   technische kolommen (id, project_id, created_by) wijzigen;
 - account verwijderen als laatste eigenaar: een ander lid wordt eigenaar, of
-  het project wordt opgeruimd als er geen leden meer zijn.
+  het project wordt opgeruimd als er geen leden meer zijn;
+- documenten opslaan in één keer: een geweigerde opslag laat niets half
+  achter, een geboekt en betaald document kan worden gecorrigeerd zolang het
+  klopt, lezers en niet-leden kunnen niets opslaan of verwijderen.
 
 Daarnaast:
 
-- **Live-controle** (`npm run supabase -- livetest`): 9 controles op de echte
+- **Live-controle** (`npm run supabase -- livetest`): 10 controles op de echte
   database in één transactie die altijd wordt teruggedraaid.
 - **End-to-end** (`npm run test:e2e`): drie tijdelijke accounts doorlopen de
-  echte app (inloggen, project aanmaken, uitnodigen, accepteren) en de API;
-  20 controles. Accounts en project worden daarna volledig verwijderd.
+  echte app (inloggen, project, uitnodigen, budget, offertes, contracten,
+  facturen, bonnen en betalingen) en de API; 90 controles. Accounts, project
+  en bestanden worden daarna volledig verwijderd.
 
 ## Rechten in een nieuw Supabase-project
 
