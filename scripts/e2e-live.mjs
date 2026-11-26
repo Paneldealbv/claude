@@ -163,7 +163,7 @@ async function main() {
       "opleverdatum opgeslagen en getoond als 15-05-2027",
     );
     if (SCREENSHOTS)
-      await pA.screenshot({ path: `${SCREENSHOTS}/e2e-dashboard.png` });
+      await pA.screenshot({ path: `${SCREENSHOTS}/e2e-dashboard.png`, fullPage: true });
 
     // Ongeldige datum (31 februari) wordt geweigerd, lokaal én door de server.
     await pA.goto(`${APP}/instellingen`);

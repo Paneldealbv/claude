@@ -3,11 +3,8 @@ import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill, type StatusSoort } from "@/components/ui/status";
 import { formatDatum, formatEuro } from "@/lib/format";
-import type {
-  DemoControle,
-  DemoOpenPost,
-  demoActiviteit,
-} from "@/lib/demo/data";
+import type { OpenPost } from "@/lib/demo/dashboard";
+import type { DemoControle, demoActiviteit } from "@/lib/demo/data";
 
 function MeerLink({ href, children }: { href: string; children: string }) {
   return (
@@ -21,7 +18,7 @@ function MeerLink({ href, children }: { href: string; children: string }) {
   );
 }
 
-export function OpenPosten({ posten }: { posten: DemoOpenPost[] }) {
+export function OpenPosten({ posten }: { posten: OpenPost[] }) {
   const totaal = posten.reduce((t, p) => t + p.openstaand, 0);
   return (
     <Card aria-labelledby="open-titel">
@@ -33,12 +30,15 @@ export function OpenPosten({ posten }: { posten: DemoOpenPost[] }) {
       />
       <ul className="mt-3 pb-2">
         {posten.map((p) => {
+          const dagen = p.dagenTotVervallen;
           const soort: StatusSoort =
-            p.dagenTotVervallen < 0
-              ? "kritiek"
-              : p.dagenTotVervallen <= 7
-                ? "waarschuwing"
-                : "neutraal";
+            dagen === null
+              ? "neutraal"
+              : dagen < 0
+                ? "kritiek"
+                : dagen <= 7
+                  ? "waarschuwing"
+                  : "neutraal";
           return (
             <li
               key={p.id}
@@ -52,9 +52,11 @@ export function OpenPosten({ posten }: { posten: DemoOpenPost[] }) {
               </div>
               <div className="flex items-center justify-between gap-3 sm:justify-end">
                 <StatusPill soort={soort}>
-                  {p.dagenTotVervallen < 0
+                  {dagen !== null && dagen < 0
                     ? "Vervallen"
-                    : `Uiterlijk ${formatDatum(p.vervaldatum)}`}
+                    : p.vervaldatum
+                      ? `Uiterlijk ${formatDatum(p.vervaldatum)}`
+                      : "Geen vervaldatum"}
                 </StatusPill>
                 <span className="w-24 text-right text-sm font-semibold tabular-nums">
                   {formatEuro(p.openstaand, { centen: false })}

@@ -11,15 +11,8 @@ import { UitgavenPerMaand } from "@/components/dashboard/uitgaven-per-maand";
 import { DemoBanner } from "@/components/shell/demo-banner";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill } from "@/components/ui/status";
-import {
-  demoActiviteit,
-  demoBetalingenPerMaand,
-  demoCategorieen,
-  demoFinanciering,
-  demoOpenPosten,
-  demoTeControleren,
-  demoTotalen as t,
-} from "@/lib/demo/data";
+import { demoDashboard } from "@/lib/demo/dashboard";
+import { demoActiviteit, demoTeControleren } from "@/lib/demo/data";
 import { getActiefProject } from "@/lib/auth";
 import { formatEuro, formatEuroVerschil } from "@/lib/format";
 
@@ -29,10 +22,18 @@ const heel = { centen: false } as const;
 
 export default async function DashboardPage() {
   const project = await getActiefProject();
-  const binnenWeek = demoOpenPosten.filter(
-    (p) => p.dagenTotVervallen >= 0 && p.dagenTotVervallen <= 7,
+  // Demo-project, doorgerekend met dezelfde rekenlogica als de echte gegevens.
+  const { resultaat, budgetRijen, maanden, openPosten } = demoDashboard();
+  const t = resultaat.cijfers;
+  const f = resultaat.financiering;
+  const binnenWeek = openPosten.filter(
+    (p) =>
+      p.dagenTotVervallen !== null &&
+      p.dagenTotVervallen >= 0 &&
+      p.dagenTotVervallen <= 7,
   ).length;
-  const afgesloten = demoCategorieen.filter((c) => c.afgesloten).length;
+  const afgesloten = budgetRijen.filter((c) => c.afgesloten).length;
+  const betaaldAandeel = t.prognose > 0 ? t.betaald / t.prognose : 0;
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -49,8 +50,8 @@ export default async function DashboardPage() {
       >
         <div className="lg:col-span-5 xl:col-span-4">
           <HeroRuimte
-            ruimte={t.ruimte}
-            financiering={t.financiering}
+            ruimte={f.ruimte}
+            financiering={f.totaalBeschikbaar}
             prognose={t.prognose}
           />
         </div>
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
           <KpiCard
             label="Totaal budget"
             waarde={t.budget}
-            toelichting={`${demoCategorieen.length} categorieën · ${afgesloten} afgesloten`}
+            toelichting={`${budgetRijen.length} categorieën · ${afgesloten} afgesloten`}
           />
           <KpiCard
             label="Prognose eindkosten"
@@ -74,10 +75,10 @@ export default async function DashboardPage() {
             label="Betaald"
             waarde={t.betaald}
             meter={{
-              aandeel: t.betaald / t.prognose,
+              aandeel: betaaldAandeel,
               label: "Betaald als deel van de prognose",
             }}
-            toelichting={`${Math.round((t.betaald / t.prognose) * 100)}% van de prognose · ${formatEuro(t.gefactureerd, heel)} gefactureerd`}
+            toelichting={`${Math.round(betaaldAandeel * 100)}% van de prognose · ${formatEuro(t.gefactureerd, heel)} gefactureerd`}
           />
           <KpiCard
             label="Openstaand"
@@ -89,20 +90,20 @@ export default async function DashboardPage() {
                 </StatusPill>
               ) : undefined
             }
-            toelichting={`${demoOpenPosten.length} facturen`}
+            toelichting={`${openPosten.length} ${openPosten.length === 1 ? "factuur" : "facturen"}`}
           />
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-5">
         <div className="min-w-0 space-y-4 lg:col-span-7 lg:space-y-5 xl:col-span-8">
-          <BudgetPerCategorie categorieen={demoCategorieen} />
-          <OpenPosten posten={demoOpenPosten} />
+          <BudgetPerCategorie categorieen={budgetRijen} />
+          <OpenPosten posten={openPosten} />
           <TeControleren items={demoTeControleren} />
         </div>
         <div className="min-w-0 space-y-4 lg:col-span-5 lg:space-y-5 xl:col-span-4">
-          <FinancieringKaart data={demoFinanciering} />
-          <UitgavenPerMaand data={demoBetalingenPerMaand} />
+          <FinancieringKaart data={f} />
+          <UitgavenPerMaand data={maanden} />
           <Activiteit items={demoActiviteit} />
         </div>
       </div>
