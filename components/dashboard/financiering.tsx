@@ -24,6 +24,21 @@ type Segment = {
  */
 export function FinancieringKaart({ data }: { data: FinancieringResultaat }) {
   const totaal = data.totaalBeschikbaar;
+  if (!data.bronnen.length) {
+    return (
+      <Card aria-labelledby="financiering-titel" className="flex flex-col">
+        <CardHeader
+          id="financiering-titel"
+          title="Financiering"
+          description="Eigen geld, hypotheek en bouwdepot"
+        />
+        <p className="text-muted px-5 pt-3 pb-5 text-sm sm:px-6">
+          Nog geen financiering vastgelegd. Dat komt in fase 9; daarna zie je
+          hier waaruit je betaalt en hoeveel er in het bouwdepot over is.
+        </p>
+      </Card>
+    );
+  }
   const hypotheek = data.bronnen.find(
     (b) => b.type === "hypotheek" && b.delen.length,
   );

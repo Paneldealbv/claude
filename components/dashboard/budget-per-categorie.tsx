@@ -6,7 +6,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status";
 import { cn } from "@/lib/cn";
 import { formatEuro, formatEuroVerschil } from "@/lib/format";
-import type { BudgetRij } from "@/lib/demo/dashboard";
+import Link from "next/link";
+import type { BudgetRij } from "@/lib/dashboard";
 
 const heel = { centen: false } as const;
 
@@ -107,7 +108,17 @@ export function BudgetPerCategorie({
         }
       />
 
-      {weergave === "grafiek" ? (
+      {categorieen.length === 0 ? (
+        <p className="text-muted px-5 pt-3 pb-3 text-sm sm:px-6">
+          Nog geen budget of kosten.{" "}
+          <Link
+            href="/budget"
+            className="text-accent-ink font-medium hover:underline"
+          >
+            Zet je budget op
+          </Link>
+        </p>
+      ) : weergave === "grafiek" ? (
         <>
           <div className="px-5 pt-4 sm:px-6">
             <Legenda />

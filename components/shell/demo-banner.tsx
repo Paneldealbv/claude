@@ -10,31 +10,15 @@ export function DemoBanner() {
     >
       <FlaskConical className="mt-0.5 size-4 shrink-0" />
       <p>
-        <strong className="font-semibold">Demo-gegevens.</strong> De cijfers,
-        namen en documenten op deze pagina zijn verzonnen en dienen alleen om
-        het ontwerp te beoordelen. Je eigen{" "}
+        <strong className="font-semibold">Demo-gegevens.</strong> Een
+        voorbeeldproject met verzonnen cijfers, namen en documenten, om te zien
+        hoe het dashboard eruitziet bij een bouw in volle gang.{" "}
         <Link
-          href="/budget"
+          href="/dashboard"
           className="font-semibold underline underline-offset-2"
         >
-          budget
+          Terug naar jouw dashboard
         </Link>
-        ,{" "}
-        <Link
-          href="/offertes"
-          className="font-semibold underline underline-offset-2"
-        >
-          offertes
-        </Link>{" "}
-        en{" "}
-        <Link
-          href="/contracten"
-          className="font-semibold underline underline-offset-2"
-        >
-          contracten
-        </Link>{" "}
-        beheer je al op hun eigen pagina; dit dashboard toont je echte cijfers
-        zodra ook facturen en betalingen zijn ingevoerd.
       </p>
     </div>
   );
