@@ -5,4 +5,5 @@ export {
   type AfsluitWaarschuwing,
 } from "./afsluiten";
 export { verdeel } from "./verdeel";
+export { metExtraContract } from "./wat-als";
 export type * from "./types";

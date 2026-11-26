@@ -12,15 +12,29 @@ export function DemoBanner() {
       <p>
         <strong className="font-semibold">Demo-gegevens.</strong> De cijfers,
         namen en documenten op deze pagina zijn verzonnen en dienen alleen om
-        het ontwerp te beoordelen. Je eigen budget beheer je al op de pagina{" "}
+        het ontwerp te beoordelen. Je eigen{" "}
         <Link
           href="/budget"
           className="font-semibold underline underline-offset-2"
         >
-          Budget
+          budget
         </Link>
-        ; dit dashboard toont je echte cijfers zodra ook contracten en facturen
-        zijn ingevoerd.
+        ,{" "}
+        <Link
+          href="/offertes"
+          className="font-semibold underline underline-offset-2"
+        >
+          offertes
+        </Link>{" "}
+        en{" "}
+        <Link
+          href="/contracten"
+          className="font-semibold underline underline-offset-2"
+        >
+          contracten
+        </Link>{" "}
+        beheer je al op hun eigen pagina; dit dashboard toont je echte cijfers
+        zodra ook facturen en betalingen zijn ingevoerd.
       </p>
     </div>
   );

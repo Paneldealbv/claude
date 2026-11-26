@@ -1,10 +1,55 @@
 "use client";
 
 import { CircleCheck, Loader2, TriangleExclamationPoint } from "lucide-react";
-import { useId, type ComponentProps, type ReactNode } from "react";
+import {
+  createContext,
+  startTransition,
+  useContext,
+  useId,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
 import { knopKlassen, type KnopVariant } from "./knop";
+
+const BezigContext = createContext(false);
+
+/**
+ * Formulier dat de invoer laat staan na versturen. Een gewone
+ * <form action={…}> wordt door React na elke verzending leeggemaakt, ook als
+ * de server een foutmelding teruggeeft. Bij lange formulieren (regels,
+ * uploads, keuzelijsten) is dat vervelend en kunnen keuzelijsten uit de pas
+ * gaan lopen met wat er werkelijk wordt verstuurd. Werkt samen met
+ * useActionState: geef de actie en de "bezig"-waarde door.
+ */
+export function BlijvendFormulier({
+  actie,
+  bezig,
+  children,
+  ...rest
+}: {
+  actie: (formData: FormData) => void;
+  bezig: boolean;
+  children: ReactNode;
+} & Omit<ComponentProps<"form">, "action" | "onSubmit" | "children">) {
+  return (
+    <BezigContext value={bezig}>
+      <form
+        {...rest}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (bezig) return;
+          const verzender = (e.nativeEvent as SubmitEvent).submitter;
+          const formData = new FormData(e.currentTarget, verzender);
+          startTransition(() => actie(formData));
+        }}
+      >
+        {children}
+      </form>
+    </BezigContext>
+  );
+}
 
 export function Veld({
   label,
@@ -64,20 +109,23 @@ export function VerzendKnop({
   bezigTekst,
   variant = "primair",
   className,
+  disabled,
   ...rest
 }: {
   children: ReactNode;
   bezigTekst?: string;
   variant?: KnopVariant;
 } & ComponentProps<"button">) {
-  const { pending } = useFormStatus();
+  const formStatus = useFormStatus();
+  const bezig = useContext(BezigContext);
+  const pending = formStatus.pending || bezig;
   return (
     <button
       type="submit"
-      disabled={pending || rest.disabled}
+      {...rest}
+      disabled={pending || disabled}
       aria-busy={pending || undefined}
       className={knopKlassen(variant, className)}
-      {...rest}
     >
       {pending && <Loader2 className="size-4 animate-spin" />}
       {pending && bezigTekst ? bezigTekst : children}

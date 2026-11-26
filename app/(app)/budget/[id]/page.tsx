@@ -22,9 +22,11 @@ import { knopKlassen } from "@/components/ui/knop";
 import { StatusPill } from "@/components/ui/status";
 import { categorieHeropenen, categorieVerplaatsen } from "@/lib/acties/budget";
 import { getActiefProject } from "@/lib/auth";
+import { laadOffertes } from "@/lib/data/offertes";
 import { laadProjectResultaat } from "@/lib/data/project";
 import { controleerAfsluiten, type Cijfers } from "@/lib/finance";
 import { formatDatum, formatEuro } from "@/lib/format";
+import { STATUS_CONTRACT } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
 
 const heel = { centen: false } as const;
@@ -65,7 +67,10 @@ export default async function CategoriePagina({
 }: PageProps<"/budget/[id]">) {
   const { id } = await params;
   const project = await getActiefProject();
-  const { invoer, resultaat, vandaag } = await laadProjectResultaat(project.id);
+  const [{ invoer, resultaat, vandaag }, offertes] = await Promise.all([
+    laadProjectResultaat(project.id),
+    laadOffertes(project.id),
+  ]);
   const cat = resultaat.categorieen.find((c) => c.id === id);
   if (!cat) notFound();
 
@@ -125,9 +130,48 @@ export default async function CategoriePagina({
   const heeftKosten =
     invoer.contractRegels.some((r) => r.categorieId === id) ||
     invoer.kostenRegels.some((r) => r.categorieId === id);
+  // Offerteregels blokkeren subcategorieën ook (de database controleert dit).
+  const heeftOfferteRegels = offertes.some((o) =>
+    o.regels.some((r) => r.categorieId === id),
+  );
   const magSubcategorie =
     magBewerken &&
-    (kinderen.length > 0 || (budgetRegels.length === 0 && !heeftKosten));
+    (kinderen.length > 0 ||
+      (budgetRegels.length === 0 && !heeftKosten && !heeftOfferteRegels));
+
+  // Contracten met regels in deze categorie (of een subcategorie ervan).
+  const inBoom = new Set([id]);
+  for (let groei = true; groei;) {
+    groei = false;
+    for (const x of invoer.categorieen) {
+      if (x.parentId && inBoom.has(x.parentId) && !inBoom.has(x.id)) {
+        inBoom.add(x.id);
+        groei = true;
+      }
+    }
+  }
+  const contractRegels = resultaat.contracten.flatMap((k) =>
+    k.regels
+      .filter((r) => inBoom.has(r.categorieId))
+      .map((r) => ({ contract: k, regel: r })),
+  );
+  const contracten = [
+    ...new Map(contractRegels.map((x) => [x.contract.id, x.contract])).values(),
+  ].map((k) => {
+    const eigen = contractRegels.filter((x) => x.contract.id === k.id);
+    return {
+      id: k.id,
+      titel: k.titel,
+      status: k.status,
+      gecontracteerd: eigen.reduce((a, x) => a + x.regel.gecontracteerd, 0),
+      prognose: eigen.reduce((a, x) => a + x.regel.prognose, 0),
+    };
+  });
+  const openOffertes = offertes.filter(
+    (o) =>
+      o.status === "ontvangen" &&
+      o.regels.some((r) => r.categorieId && inBoom.has(r.categorieId)),
+  ).length;
   const controle = cat.afgesloten
     ? null
     : controleerAfsluiten(invoer, id, { vandaag });
@@ -213,6 +257,62 @@ export default async function CategoriePagina({
               />
             </Card>
           )}
+
+          {/* Contracten in deze categorie */}
+          <Card aria-labelledby="contracten-titel" className="overflow-hidden">
+            <CardHeader
+              id="contracten-titel"
+              title="Contracten"
+              description={
+                contracten.length
+                  ? "Bedragen van de regels in deze categorie."
+                  : "Nog geen contracten in deze categorie."
+              }
+              className="pb-4"
+            />
+            {contracten.length > 0 && (
+              <ul>
+                {contracten.map((k) => (
+                  <li key={k.id} className="border-border border-t">
+                    <Link
+                      href={`/contracten/${k.id}`}
+                      className="hover:bg-surface-2 flex items-center gap-3 px-5 py-3 sm:px-6"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm">
+                        {k.titel}
+                      </span>
+                      {k.status !== "actief" && (
+                        <StatusPill soort={STATUS_CONTRACT[k.status].soort}>
+                          {STATUS_CONTRACT[k.status].tekst}
+                        </StatusPill>
+                      )}
+                      <span className="text-muted hidden text-xs tabular-nums sm:inline">
+                        gecontracteerd {formatEuro(k.gecontracteerd, heel)}
+                      </span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {formatEuro(k.prognose, heel)}
+                      </span>
+                      <ChevronRight className="text-subtle size-4" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {openOffertes > 0 && (
+              <p className="border-border text-muted border-t px-5 py-3 text-sm sm:px-6">
+                {openOffertes === 1
+                  ? "Er wacht 1 offerte"
+                  : `Er wachten ${openOffertes} offertes`}{" "}
+                op een besluit.{" "}
+                <Link
+                  href="/offertes?weergave=vergelijk"
+                  className="text-accent-ink font-medium hover:underline"
+                >
+                  Vergelijken
+                </Link>
+              </p>
+            )}
+          </Card>
 
           {/* Subcategorieën */}
           {(kinderen.length > 0 || magSubcategorie) && (
