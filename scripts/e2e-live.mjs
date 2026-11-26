@@ -1396,6 +1396,156 @@ async function main() {
     await pC.waitForURL("**/welkom", { timeout: 20000 });
     ok(true, "C ziet de factuur van A niet");
 
+    // --- Fase 7: dashboard en rapportages -------------------------------------
+    console.log("→ Dashboard en rapportages");
+    await pA.goto(`${APP}/dashboard`);
+    const kern = normaal(
+      await pA.getByRole("region", { name: "Kerncijfers" }).innerText(),
+    );
+    ok(
+      (await pA.getByText("Demo-gegevens").count()) === 0 &&
+        kern.includes("Totaal budget € 25.000") &&
+        kern.includes("Betaald € 7.750") &&
+        kern.includes("Prognose eindkosten"),
+      "dashboard toont de echte cijfers (budget € 25.000, betaald € 7.750), zonder demo",
+    );
+    ok(
+      normaal(
+        await pA
+          .getByRole("region", { name: "Budget en prognose per categorie" })
+          .innerText(),
+      ).includes("Keuken") &&
+        normaal(
+          await pA.getByRole("region", { name: "Te betalen" }).innerText(),
+        ).includes("Bouwmarkt Zuid") &&
+        normaal(
+          await pA
+            .getByRole("region", { name: "Recente activiteit" })
+            .innerText(),
+        ).includes("geboekt") &&
+        (await pA.getByRole("region", { name: "Aan de slag" }).count()) === 0,
+      "dashboard: categorieën, te betalen (de bon) en recente activiteit; startstappen verdwenen",
+    );
+    if (SCREENSHOTS) {
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/dashboard.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 390, height: 844 });
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/dashboard-mobiel.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 1440, height: 900 });
+    }
+    await pA.goto(`${APP}/dashboard?demo=1`);
+    await pA.getByText("Demo-gegevens.").waitFor({ timeout: 20000 });
+    ok(true, "voorbeeld met verzonnen cijfers blijft te bekijken (?demo=1)");
+
+    // Rapportages.
+    await pA.goto(`${APP}/rapportages`);
+    const keukenRij = normaal(
+      await pA.getByRole("row", { name: /^Keuken / }).innerText(),
+    );
+    ok(
+      keukenRij.includes("€ 25.000,00") && keukenRij.includes("€ 27.000,00"),
+      "rapport per categorie: Keuken budget € 25.000, prognose € 27.000",
+    );
+    await pA.goto(`${APP}/rapportages?rapport=ruimte`);
+    ok(
+      normaal(
+        await pA.getByRole("row", { name: /^Keuken / }).innerText(),
+      ).includes("€ 21.350,00"),
+      "rapport per ruimte: Keuken € 21.350 gecontracteerd (de toegewezen contractregel)",
+    );
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/rapport-ruimte.png`,
+        fullPage: true,
+      });
+    await pA.goto(`${APP}/rapportages?rapport=leverancier`);
+    const kRij = normaal(
+      await pA.getByRole("row", { name: /^Keukenstudio Noord/ }).innerText(),
+    );
+    ok(
+      kRij.includes("€ 27.000,00") &&
+        kRij.split("€ 7.750,00").length === 3 &&
+        kRij.includes("€ 0,00"),
+      "rapport per leverancier: Keukenstudio Noord € 27.000 gecontracteerd, € 7.750 gefactureerd en betaald",
+    );
+
+    // Export: CSV voor Nederlandse Excel en een Excel-werkmap.
+    const csv = await pA.request.get(
+      `${APP}/rapportages/export?rapport=categorie&formaat=csv`,
+    );
+    const csvTekst = await csv.text();
+    ok(
+      csv.ok() &&
+        csv.headers()["content-type"].startsWith("text/csv") &&
+        csv.headers()["content-disposition"].includes("attachment") &&
+        csvTekst.startsWith("﻿") &&
+        csvTekst.includes(
+          "Afbouw;Keuken;25000,00;27000,00;7750,00;7750,00;0,00;27000,00;2000,00;Open",
+        ),
+      "CSV-export: puntkomma's, decimale komma, Keuken-regel exact",
+    );
+    const xlsx = await pA.request.get(
+      `${APP}/rapportages/export?rapport=alles&formaat=xlsx`,
+    );
+    const ExcelJS = require("exceljs");
+    const werkmap = new ExcelJS.Workbook();
+    await werkmap.xlsx.load(await xlsx.body());
+    let keukenXlsx;
+    werkmap.getWorksheet("Categorieën").eachRow((r) => {
+      if (r.getCell(2).value === "Keuken") keukenXlsx = r;
+    });
+    ok(
+      xlsx.ok() &&
+        werkmap.worksheets.map((w) => w.name).join() ===
+          "Categorieën,Ruimtes,Leveranciers,Betalingen,Documenten" &&
+        keukenXlsx?.getCell(3).value === 25000 &&
+        keukenXlsx?.getCell(8).value === 27000,
+      "Excel-export: vijf tabbladen, bedragen als echte getallen (Keuken 25.000 / 27.000)",
+    );
+
+    // Afdrukken / PDF: licht en zonder menu's.
+    await pA.goto(`${APP}/rapportages`);
+    await pA.emulateMedia({ media: "print" });
+    ok(
+      !(await pA.locator("aside").isVisible()) &&
+        (await pA.getByRole("button", { name: "PDF" }).isHidden()),
+      "afdrukweergave zonder menu en knoppen",
+    );
+    if (SCREENSHOTS)
+      await pA.pdf({
+        path: `${SCREENSHOTS}/rapport-categorie.pdf`,
+        format: "A4",
+        printBackground: true,
+      });
+    await pA.emulateMedia({ media: "screen" });
+
+    // Toegang: C en niet-ingelogd krijgen geen export.
+    const exportC = await pC.request.get(
+      `${APP}/rapportages/export?rapport=categorie&formaat=csv`,
+    );
+    const exportAnon = await fetch(
+      `${APP}/rapportages/export?rapport=categorie&formaat=csv`,
+    );
+    ok(
+      !(exportC.headers()["content-type"] ?? "").includes("csv") &&
+        !(await exportC.text()).includes("Keuken") &&
+        exportAnon.url.includes("/inloggen") &&
+        !(exportAnon.headers.get("content-type") ?? "").includes("csv"),
+      "C en niet-ingelogd krijgen geen export (doorgestuurd)",
+    );
+    await pB.goto(`${APP}/dashboard`);
+    ok(
+      normaal(
+        await pB.getByRole("region", { name: "Kerncijfers" }).innerText(),
+      ).includes("Betaald € 7.750"),
+      "B ziet hetzelfde dashboard",
+    );
+
     // B ziet hetzelfde budget; C helemaal niets.
     await pB.goto(`${APP}/budget`);
     await pB.getByText("€ 25.000").first().waitFor({ timeout: 20000 });

@@ -97,8 +97,9 @@ Daarnaast:
   database in één transactie die altijd wordt teruggedraaid.
 - **End-to-end** (`npm run test:e2e`): drie tijdelijke accounts doorlopen de
   echte app (inloggen, project, uitnodigen, budget, offertes, contracten,
-  facturen, bonnen en betalingen) en de API; 90 controles. Accounts, project
-  en bestanden worden daarna volledig verwijderd.
+  facturen, bonnen, betalingen, dashboard, rapportages en export) en de API;
+  101 controles. Accounts, project en bestanden worden daarna volledig
+  verwijderd.
 
 ## Rechten in een nieuw Supabase-project
 

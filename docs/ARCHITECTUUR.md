@@ -1,6 +1,6 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 6 · 26-11-2026 · fase 6: facturen, bonnen en betalingen (§ 3.13).
+Versie 7 · 26-11-2026 · fase 7: dashboard en rapportages (§ 3.14).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -389,6 +389,34 @@ Keuzes die bij het programmeren concreet zijn gemaakt:
 - **Terugzetten of laten vervallen** kan alleen zolang er geen betalingen zijn;
   verwijderen haalt document, regels en betalingen in één keer weg.
 
+### 3.14 Dashboard en rapportages (vastgelegd in fase 7)
+
+- **Dashboard** op de echte cijfers van het actieve project, met dezelfde
+  rekenlogica en dezelfde omzetting (`lib/dashboard.ts`) als het voorbeeld.
+  Het voorbeeld met verzonnen cijfers blijft te zien via `/dashboard?demo=1`.
+- **Hoofdgetal**: zolang er geen financiering is ingevuld (fase 9) de
+  prognose eindkosten ten opzichte van het budget; daarna de financiële
+  ruimte (financiering − prognose).
+- **Kerncijfers**: budget, vastgelegd (of prognose), betaald en openstaand
+  met te laat en bijna vervallen. Daaronder budget en prognose per
+  categorie (alleen categorieën waar iets in staat), te betalen, nog niet
+  geboekt, financiering, betaald per maand en recente activiteit in gewone
+  taal (uit het activiteitenlog).
+- **Aan de slag**: zolang een nieuw project niet alle eerste stappen heeft
+  (budget, contract, documenten, partner), staan die bovenaan.
+- **Rapportages** per categorie (boom), per ruimte (met "niet toegewezen",
+  zodat het totaal klopt), per leverancier, betalingen en documenten. Eén
+  model per rapport (`lib/rapportages.ts`) voor de pagina, de CSV en Excel,
+  zodat de cijfers overal gelijk zijn. Regels zonder bedragen zijn op het
+  scherm standaard verborgen; de export bevat alles.
+- **Export**: CSV voor Nederlandse Excel (puntkomma's, decimale komma,
+  UTF-8 met BOM; tekst die op een formule lijkt wordt nooit uitgevoerd) en
+  Excel (`.xlsx`, één tabblad per rapport of alles in één werkmap, met echte
+  getallen en datums). **PDF** via het afdrukvenster van de browser: liggend
+  A4, altijd licht, zonder menu's.
+- Export alleen voor ingelogde leden van het project; de bestanden worden
+  nergens bewaard of gecachet.
+
 ---
 
 ## 4. Database-tabellen
@@ -547,7 +575,7 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 4. Categorieën, ruimtes, budget ✓       | Beheer en budgetpagina                                                                                                       |
 | 5. Leveranciers, offertes, contracten ✓ | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
 | 6. Documenten en betalingen ✓           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
-| 7. Dashboard en rapportages             | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
+| 7. Dashboard en rapportages ✓           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
 | 8. AI-documentherkenning                | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
 | 9. Financiering                         | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
 | 10. Afronding                           | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
