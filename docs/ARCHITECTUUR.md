@@ -1,7 +1,6 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 3 · 26-11-2026 · verwerkt de beslissingen van de opdrachtgever na fase 0
-(afsluitcontrole, bouwdepot als deel van de hypotheek, AI-controles).
+Versie 4 · 26-11-2026 · fase 3: uitwerking van de rekenlogica in code (§ 3.9–3.10).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -258,7 +257,46 @@ eigen categorie, ruimte(s) en BTW-tarief. Het bestand staat één keer in de ops
 Alle regels uit dit hoofdstuk staan als pure TypeScript-functies in `lib/finance/`.
 Ze krijgen de rijen uit de database binnen en geven de totalen terug. Dashboard,
 budgetpagina, rapportages en exports gebruiken allemaal dezelfde functies. Ieder
-voorbeeld uit dit document wordt een unit test.
+voorbeeld uit dit document is een unit test.
+
+| Bestand           | Inhoud                                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `verdeel.ts`      | Verdelen naar rato met de grootste-restmethode (exact tot op de cent)                                     |
+| `bereken.ts`      | `berekenProject()`: contracten, categorieën, projecttotalen, financiering, ruimtes, termijnen, documenten |
+| `afsluiten.ts`    | `controleerAfsluiten()`: controlelijst vóór het afsluiten van een categorie                               |
+| `uit-database.ts` | Databaserijen → invoer van de rekenlogica                                                                 |
+| `*.test.ts`       | Voorbeelden uit dit document, plus invarianten op 300 willekeurige projecten                              |
+
+### 3.10 Uitwerking in code (vastgelegd in fase 3)
+
+Keuzes die bij het programmeren concreet zijn gemaakt:
+
+- **Alle bedragen inclusief BTW.** Betalingen zijn altijd incl. BTW, dus de
+  rekenlogica rekent consequent incl. BTW (keuze van de opdrachtgever).
+- **Kostenregel op een heel contract met een categorie** (bijv. een
+  termijnfactuur voor alleen het keukendeel): naar rato over de contractregels
+  in díe categorie; heeft het contract daar geen regels, dan over alle regels.
+- **Kosten op een contract zonder contractregels** tellen als losse kosten in
+  hun categorie, met een melding.
+- **Geannuleerd contract:** geen toezegging (gecontracteerd = 0); wat al
+  gefactureerd is telt mee. **Afgerond contract:** prognose = gefactureerd.
+- **Betalingen** worden naar rato van de bedragen over de regels van het
+  document verdeeld; daarmee is "betaald" per categorie, contractregel en
+  ruimte bekend. Bij een document met plus- en minregels blijft dit exact.
+- **Afgesloten hoofdcategorie** sluit ook alle subcategorieën.
+- **Ruimterapport:** gecontracteerd, gefactureerd, betaald en vastgelegd per
+  ruimte. Een kostenregel zonder eigen ruimteverdeling neemt die van zijn
+  contractregel over. "Niet toegewezen" vult aan tot 100%, zodat de som van
+  alle ruimtes gelijk is aan het projecttotaal.
+- **Termijnschema:** termijnbedragen bij percentages worden met de
+  grootste-restmethode berekend, zodat ze exact optellen tot het contract.
+- **Betaalstatus** per geboekt document: open, deels, betaald of te laat
+  (vervaldatum voorbij en nog niet betaald).
+- **Meldingen** (geen fout, wel aandacht): kosten zonder categorie, kosten op
+  een contract zonder regels, hypotheekdelen die niet optellen, kosten in een
+  categorie zonder budget, meer betaald dan het documenttotaal.
+- **Datums** worden overal ingevoerd als DD-MM-JJJJ (`components/ui/datum-veld.tsx`),
+  ongeacht de taal van de browser, en als ISO (JJJJ-MM-DD) opgeslagen.
 
 ---
 
@@ -404,10 +442,10 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 
 | Fase                                  | Inhoud                                                                                                                       |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **0. Fundament**                      | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
-| 1. Ontwerp-shell                      | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
-| 2. Supabase + inloggen                | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
-| 3. Financieel datamodel + rekenlogica | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden                                                |
+| 0. Fundament ✓                        | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
+| 1. Ontwerp-shell ✓                    | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
+| 2. Supabase + inloggen ✓              | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
+| 3. Datamodel + rekenlogica ✓          | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
 | 4. Categorieën, ruimtes, budget       | Beheer en budgetpagina                                                                                                       |
 | 5. Leveranciers, offertes, contracten | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
 | 6. Documenten en betalingen           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
