@@ -40,6 +40,44 @@ function typeVan(bestand: File): string {
   return PER_EXTENSIE[ext] ?? "";
 }
 
+/** Langste zijde na verkleinen: scherp genoeg voor kleine tekst op een bon. */
+const MAX_ZIJDE = 2400;
+
+/**
+ * Grote foto's verkleinen voor het uitlezen (sneller uploaden; de AI leest
+ * maximaal 5 MB per foto). Lukt het niet, dan blijft het origineel.
+ */
+async function verklein(bestand: File, type: string): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(type)) return bestand;
+  try {
+    const beeld = await createImageBitmap(bestand, {
+      imageOrientation: "from-image",
+    });
+    const schaal = Math.min(1, MAX_ZIJDE / Math.max(beeld.width, beeld.height));
+    if (schaal === 1 && bestand.size <= 1.5 * 1024 * 1024) {
+      beeld.close();
+      return bestand;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(beeld.width * schaal);
+    canvas.height = Math.round(beeld.height * schaal);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return bestand;
+    ctx.fillStyle = "#ffffff"; // transparante PNG's: witte achtergrond
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(beeld, 0, 0, canvas.width, canvas.height);
+    beeld.close();
+    const blob = await new Promise<Blob | null>((klaar) =>
+      canvas.toBlob(klaar, "image/jpeg", 0.85),
+    );
+    if (!blob || blob.size >= bestand.size) return bestand;
+    const naam = `${bestand.name.replace(/\.[^.]+$/, "") || "foto"}.jpg`;
+    return new File([blob], naam, { type: "image/jpeg" });
+  } catch {
+    return bestand;
+  }
+}
+
 async function sha256(bestand: File): Promise<string> {
   const hash = await crypto.subtle.digest(
     "SHA-256",
@@ -58,10 +96,23 @@ export function BestandUpload({
   naam = "bestandId",
   label = "Document (PDF of foto)",
   standaard = null,
+  accept,
+  verkleinFoto = false,
+  camera = false,
+  leegTekst = "Kies een PDF of foto (max. 20 MB)",
+  onGekozen,
 }: {
   naam?: string;
   label?: string;
   standaard?: Gekozen | null;
+  /** Alleen deze typen (bijv. wat de AI kan lezen); standaard alle. */
+  accept?: readonly string[];
+  /** Grote foto's eerst verkleinen (voor het uitlezen). */
+  verkleinFoto?: boolean;
+  /** Op een telefoon meteen de camera openen. */
+  camera?: boolean;
+  leegTekst?: string;
+  onGekozen?: (bestand: Gekozen | null) => void;
 }) {
   const id = useId();
   const invoer = useRef<HTMLInputElement>(null);
@@ -70,12 +121,29 @@ export function BestandUpload({
   const [fout, setFout] = useState<string | null>(null);
   const [opmerking, setOpmerking] = useState<string | null>(null);
 
-  async function verwerk(bestand: File) {
+  function kies(bestand: Gekozen | null) {
+    setGekozen(bestand);
+    onGekozen?.(bestand);
+  }
+
+  async function verwerk(origineel: File) {
     setFout(null);
     setOpmerking(null);
-    const type = typeVan(bestand);
+    let bestand = origineel;
+    let type = typeVan(bestand);
+    if (accept && !accept.includes(type)) {
+      return setFout("Kies een PDF of een foto (JPG, PNG of WEBP).");
+    }
+    if (verkleinFoto) {
+      setBezig("Foto voorbereiden…");
+      bestand = await verklein(bestand, type);
+      type = typeVan(bestand);
+    }
     const probleem = controleerBestand(type, bestand.size);
-    if (probleem) return setFout(probleem);
+    if (probleem) {
+      setBezig(null);
+      return setFout(probleem);
+    }
 
     try {
       setBezig("Bestand controleren…");
@@ -88,7 +156,7 @@ export function BestandUpload({
       const voorbereid = await bestandVoorbereiden(meta);
       if (voorbereid.status === "fout") return setFout(voorbereid.fout);
       if (voorbereid.status === "bestaat") {
-        setGekozen({ id: voorbereid.bestandId, naam: voorbereid.naam });
+        kies({ id: voorbereid.bestandId, naam: voorbereid.naam });
         setOpmerking(
           "Dit bestand stond al in je project; het bestaande bestand wordt gebruikt.",
         );
@@ -112,7 +180,7 @@ export function BestandUpload({
         pad: voorbereid.pad,
       });
       if (geregistreerd.status === "fout") return setFout(geregistreerd.fout);
-      setGekozen({
+      kies({
         id: geregistreerd.bestandId,
         naam: bestand.name,
         grootte: bestand.size,
@@ -138,7 +206,8 @@ export function BestandUpload({
         ref={invoer}
         id={id}
         type="file"
-        accept={ACCEPT_ATTRIBUUT}
+        accept={accept ? accept.join(",") : ACCEPT_ATTRIBUUT}
+        capture={camera ? "environment" : undefined}
         className="sr-only"
         onChange={(e) => {
           const bestand = e.target.files?.[0];
@@ -159,7 +228,7 @@ export function BestandUpload({
           <button
             type="button"
             onClick={() => {
-              setGekozen(null);
+              kies(null);
               setOpmerking(null);
             }}
             className={knopKlassen("stil", "px-2 py-1.5")}
@@ -181,7 +250,7 @@ export function BestandUpload({
           ) : (
             <Paperclip className="size-4" />
           )}
-          {bezig ?? "Kies een PDF of foto (max. 20 MB)"}
+          {bezig ?? leegTekst}
         </button>
       )}
       {opmerking && (

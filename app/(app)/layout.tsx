@@ -12,6 +12,7 @@ import {
   getProjecten,
   initialen,
 } from "@/lib/auth";
+import { OPEN_VOORSTELLEN } from "@/lib/data/herkenning";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -21,14 +22,20 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     getProjecten(),
   ]);
   const supabase = await createClient();
-  const [leden, nietGeboekt] = await Promise.all([
+  const [leden, nietGeboekt, voorstellen] = await Promise.all([
     getLeden(project.id),
     supabase
       .from("cost_documents")
       .select("id", { count: "exact", head: true })
       .eq("project_id", project.id)
       .in("status", ["concept", "te_controleren"]),
+    supabase
+      .from("document_extractions")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", project.id)
+      .in("status", OPEN_VOORSTELLEN),
   ]);
+  const teControleren = (nietGeboekt.count ?? 0) + (voorstellen.count ?? 0);
   const ik = leden.find((l) => l.userId === gebruiker.id);
   const mijnNaam = ik?.naam ?? gebruiker.email;
 
@@ -50,7 +57,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       initialen: initialen(l.naam),
       rol: l.rol,
     })),
-    badges: nietGeboekt.count ? { "/te-controleren": nietGeboekt.count } : {},
+    badges: teControleren ? { "/te-controleren": teControleren } : {},
   };
 
   return (

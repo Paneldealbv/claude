@@ -224,7 +224,7 @@ function DashboardWeergave({
             omschrijving={
               demo
                 ? "AI-voorstellen · tellen pas mee na bevestiging"
-                : "Nog niet geboekt · telt pas mee na boeken"
+                : "AI-voorstellen en concepten · tellen pas mee na boeken"
             }
           />
         </div>

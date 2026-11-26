@@ -1,6 +1,11 @@
 "use client";
 
-import { CircleCheck, Loader2, TriangleExclamationPoint } from "lucide-react";
+import {
+  CircleCheck,
+  Info,
+  Loader2,
+  TriangleExclamationPoint,
+} from "lucide-react";
 import {
   createContext,
   startTransition,
@@ -136,22 +141,33 @@ export function VerzendKnop({
   );
 }
 
+const MELDING = {
+  fout: {
+    Icon: TriangleExclamationPoint,
+    klassen: "bg-critical-soft text-critical",
+  },
+  succes: { Icon: CircleCheck, klassen: "bg-positive-soft text-positive" },
+  "let-op": {
+    Icon: TriangleExclamationPoint,
+    klassen: "bg-warning-soft text-warning",
+  },
+  info: { Icon: Info, klassen: "bg-info-soft text-info" },
+} as const;
+
 export function Melding({
   soort,
   children,
 }: {
-  soort: "fout" | "succes";
+  soort: keyof typeof MELDING;
   children: ReactNode;
 }) {
-  const Icon = soort === "fout" ? TriangleExclamationPoint : CircleCheck;
+  const { Icon, klassen } = MELDING[soort];
   return (
     <div
       role={soort === "fout" ? "alert" : "status"}
       className={cn(
         "flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-sm",
-        soort === "fout"
-          ? "bg-critical-soft text-critical"
-          : "bg-positive-soft text-positive",
+        klassen,
       )}
     >
       <Icon className="mt-0.5 size-4 shrink-0" />

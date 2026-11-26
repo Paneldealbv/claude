@@ -155,9 +155,11 @@ export function TeControleren({
                     <p className="truncate text-sm font-medium">
                       {d.leverancier}
                     </p>
-                    <span className="text-sm font-medium whitespace-nowrap tabular-nums">
-                      {formatEuro(d.bedrag)}
-                    </span>
+                    {d.bedrag !== null && (
+                      <span className="text-sm font-medium whitespace-nowrap tabular-nums">
+                        {formatEuro(d.bedrag)}
+                      </span>
+                    )}
                   </div>
                   <p className="text-muted text-xs">
                     {d.titel}

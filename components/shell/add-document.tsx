@@ -42,14 +42,15 @@ const opties: {
     icon: Camera,
     titel: "Bon fotograferen",
     tekst:
-      "Maak een foto of kies een bestand en verdeel de bon over regels. Automatisch uitlezen volgt in fase 8.",
-    href: "/documenten/nieuw?type=bon",
+      "Maak een foto; de AI leest de bon uit en jij controleert het voorstel.",
+    href: "/te-controleren/nieuw?bron=camera",
   },
   {
     icon: Upload,
     titel: "Factuur uploaden",
-    tekst: "PDF of foto van een factuur, termijnfactuur of creditnota.",
-    href: "/documenten/nieuw?type=factuur",
+    tekst:
+      "PDF of foto van een factuur, termijnfactuur of creditnota; de AI doet een voorstel.",
+    href: "/te-controleren/nieuw",
   },
   {
     icon: FileText,
@@ -61,8 +62,8 @@ const opties: {
   {
     icon: PencilLine,
     titel: "Handmatig invoeren",
-    tekst: "Zonder document, bijvoorbeeld een contante betaling.",
-    href: "/documenten/nieuw?type=bon",
+    tekst: "Zelf alle gegevens invullen, met of zonder document.",
+    href: "/documenten/nieuw",
   },
 ];
 
@@ -160,7 +161,7 @@ export function AddDocumentProvider({ children }: { children: ReactNode }) {
           className="border-border bg-surface-2 text-muted flex items-start gap-2 rounded-b-2xl border-t px-6 py-4 text-xs leading-relaxed"
         >
           <Sparkles className="text-accent-ink mt-px size-4 shrink-0" />
-          Automatisch uitlezen met AI volgt in fase 8. Een AI-voorstel wordt
+          De AI leest facturen en bonnen uit en doet een voorstel. Dat wordt
           altijd eerst door jou gecontroleerd voordat het meetelt.
         </div>
       </dialog>

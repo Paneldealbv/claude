@@ -118,9 +118,23 @@ export async function leverancierBepalen(
     if (!nieuw) return { fout: "Vul de naam van de nieuwe leverancier in." };
     if (nieuw.length > 120)
       return { fout: "De naam van de leverancier is te lang." };
+    // Gegevens die de AI van het document las; alleen als ze geldig zijn.
+    const kvk = tekst(formData, "nieuweLeverancierKvk").replace(/\D/g, "");
+    const iban = tekst(formData, "nieuweLeverancierIban")
+      .replace(/\s/g, "")
+      .toUpperCase();
+    const btw = tekst(formData, "nieuweLeverancierBtw")
+      .replace(/[\s.]/g, "")
+      .toUpperCase();
     const { data, error } = await supabase
       .from("suppliers")
-      .insert({ project_id: projectId, name: nieuw })
+      .insert({
+        project_id: projectId,
+        name: nieuw,
+        kvk_number: /^\d{8}$/.test(kvk) ? kvk : null,
+        iban: /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban) ? iban : null,
+        vat_number: btw && btw.length <= 20 ? btw : null,
+      })
       .select("id")
       .single();
     if (error || !data)
@@ -143,7 +157,7 @@ export async function ruimBestandOp(
   bestandId: string | null,
 ) {
   if (!bestandId) return;
-  const tel = (tabel: "quotes" | "cost_documents" | "document_extractions") =>
+  const tel = (tabel: "quotes" | "cost_documents") =>
     supabase
       .from(tabel)
       .select("id", { count: "exact", head: true })
@@ -151,7 +165,12 @@ export async function ruimBestandOp(
   const [a, b, c] = await Promise.all([
     tel("quotes"),
     tel("cost_documents"),
-    tel("document_extractions"),
+    // Een verwerkt AI-voorstel houdt het bestand niet vast; het verdwijnt mee.
+    supabase
+      .from("document_extractions")
+      .select("id", { count: "exact", head: true })
+      .eq("file_id", bestandId)
+      .neq("status", "verwerkt"),
   ]);
   if ((a.count ?? 0) + (b.count ?? 0) + (c.count ?? 0) > 0) return;
   const { data: f } = await supabase

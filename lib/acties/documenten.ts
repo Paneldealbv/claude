@@ -149,14 +149,23 @@ const kopSchema = z.object({
   contractId: z.uuid().or(z.literal("")),
   termijnId: z.uuid().or(z.literal("")),
   bestandId: z.uuid().or(z.literal("")),
+  extractieId: z.uuid().or(z.literal("")),
   notities: z.string().max(2000, { error: "Maximaal 2000 tekens." }),
 });
+
+/** AI-voorstellen die nog niet tot een document hebben geleid. */
+const OPEN_VOORSTEL = [
+  "wachtrij",
+  "bezig",
+  "te_controleren",
+  "mislukt",
+] as const;
 
 export async function documentOpslaan(
   _vorige: ActieStatus,
   formData: FormData,
 ): Promise<ActieStatus> {
-  const { project, fout } = await bewerkbaarProject();
+  const { gebruiker, project, fout } = await bewerkbaarProject();
   if (fout) return { fout };
 
   const kop = kopSchema.safeParse({
@@ -168,6 +177,7 @@ export async function documentOpslaan(
     contractId: tekst(formData, "contractId"),
     termijnId: tekst(formData, "termijnId"),
     bestandId: tekst(formData, "bestandId"),
+    extractieId: tekst(formData, "extractieId"),
     notities: tekst(formData, "notities"),
   });
   if (!kop.success) {
@@ -227,6 +237,46 @@ export async function documentOpslaan(
         ? "concept"
         : (huidig?.status ?? "concept");
 
+  // Vanuit een AI-voorstel: het voorstel moet nog open staan.
+  let extractie: { id: string } | null = null;
+  if (k.extractieId) {
+    const { data } = await supabase
+      .from("document_extractions")
+      .select("id, status, cost_document_id")
+      .eq("project_id", project.id)
+      .eq("id", k.extractieId)
+      .maybeSingle();
+    if (!data) return { fout: "Het voorstel bestaat niet meer." };
+    if (data.status === "verwerkt") {
+      return {
+        fout: "Dit voorstel is al verwerkt tot een document.",
+        link: data.cost_document_id
+          ? `/documenten/${data.cost_document_id}`
+          : undefined,
+      };
+    }
+    extractie = data;
+  }
+
+  if (status === "geboekt" && extractie) {
+    // Boeken na controle van een AI-voorstel: de gegevens die nodig zijn om
+    // het document te controleren en dubbel invoeren te voorkomen.
+    const verplicht: Record<string, string> = {};
+    if (k.type !== "bon" && !k.nummer) {
+      verplicht.nummer = "Vul het nummer van het document in.";
+    }
+    if (totaal === null) {
+      verplicht.totaal =
+        "Vul het totaal van het document in; zo wordt gecontroleerd of de regels kloppen.";
+    }
+    if (Object.keys(verplicht).length) {
+      return {
+        veldfouten: verplicht,
+        fout: "Vul de gemarkeerde velden in om te boeken, of sla het op als concept.",
+      };
+    }
+  }
+
   if (status === "geboekt") {
     if (!regels.length) {
       return { fout: "Voeg minstens één regel toe om het document te boeken." };
@@ -280,6 +330,14 @@ export async function documentOpslaan(
       .maybeSingle();
     leverancierId = c?.supplier_id ?? null;
   }
+  if (status === "geboekt" && extractie && k.type !== "bon" && !leverancierId) {
+    return {
+      veldfouten: {
+        leverancierId: "Kies de leverancier of maak een nieuwe aan.",
+      },
+      fout: "Vul de gemarkeerde velden in om te boeken, of sla het op als concept.",
+    };
+  }
 
   const document = {
     id: id || null,
@@ -296,6 +354,8 @@ export async function documentOpslaan(
     due_date: k.type === "bon" ? null : k.vervalDatum || null,
     stated_total_incl_cents: totaal,
     notes: k.notities || null,
+    // Alleen bij een nieuw document; de bron verandert daarna niet meer.
+    source: extractie ? "ai" : "handmatig",
   };
   const lines = regels.map((r) => ({
     description: r.omschrijving,
@@ -321,8 +381,32 @@ export async function documentOpslaan(
       {
         type: k.type,
         totaal: regels.reduce((a, r) => a + r.bedrag, 0),
+        ...(extractie ? { bron: "ai" } : {}),
       },
     );
+  }
+  // Het voorstel (en elk ander open voorstel voor dit bestand) is verwerkt.
+  const verwerkt = {
+    status: "verwerkt" as const,
+    cost_document_id: opgeslagen,
+    reviewed_by: gebruiker.id,
+    reviewed_at: new Date().toISOString(),
+    error: null,
+  };
+  if (extractie) {
+    await supabase
+      .from("document_extractions")
+      .update(verwerkt)
+      .eq("project_id", project.id)
+      .eq("id", extractie.id);
+  }
+  if (document.file_id) {
+    await supabase
+      .from("document_extractions")
+      .update(verwerkt)
+      .eq("project_id", project.id)
+      .eq("file_id", document.file_id)
+      .in("status", OPEN_VOORSTEL);
   }
   if (huidig?.file_id && huidig.file_id !== document.file_id) {
     await ruimBestandOp(supabase, project.id, huidig.file_id);

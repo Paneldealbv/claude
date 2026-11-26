@@ -122,16 +122,18 @@ export function KostenRegelsEditor({
   );
 
   return (
-    <div className="space-y-3">
+    // Container query: de rij-indeling past zich aan de beschikbare breedte
+    // aan (ook in een smalle kolom naast het originele document).
+    <div className="@container space-y-3">
       <input type="hidden" name={naam} value={waarde} />
-      <div className="text-muted hidden grid-cols-[1.2fr_1.5fr_8.5rem_5.5rem_auto] gap-3 px-1 text-xs font-medium lg:grid">
+      <div className="text-muted hidden grid-cols-[1.2fr_1.5fr_8.5rem_5.5rem_auto] gap-3 px-1 text-xs font-medium @2xl:grid">
         <span>Omschrijving</span>
         <span>Hoort bij</span>
         <span className="text-right">Bedrag incl. BTW</span>
         <span>BTW</span>
         <span className="w-[4.75rem]" />
       </div>
-      <ul className="space-y-3 lg:space-y-2">
+      <ul className="space-y-3 @2xl:space-y-2">
         {rijen.map((r, i) => {
           const id = `${basisId}-${r.sleutel}`;
           const bedrag = parseEuro(r.bedragTekst);
@@ -139,13 +141,13 @@ export function KostenRegelsEditor({
           return (
             <li
               key={r.sleutel}
-              className="border-border rounded-xl border p-3 lg:border-0 lg:p-0"
+              className="border-border rounded-xl border p-3 @2xl:border-0 @2xl:p-0"
             >
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-[1.2fr_1.5fr_8.5rem_5.5rem_auto] lg:items-start lg:gap-3">
-                <div className="col-span-2 lg:col-span-1">
+              <div className="grid grid-cols-2 gap-2 @2xl:grid-cols-[1.2fr_1.5fr_8.5rem_5.5rem_auto] @2xl:items-start @2xl:gap-3">
+                <div className="col-span-2 @2xl:col-span-1">
                   <label
                     htmlFor={`${id}-oms`}
-                    className="mb-1 block text-xs font-medium lg:sr-only"
+                    className="mb-1 block text-xs font-medium @2xl:sr-only"
                   >
                     Omschrijving regel {i + 1}
                   </label>
@@ -160,10 +162,10 @@ export function KostenRegelsEditor({
                     }
                   />
                 </div>
-                <div className="col-span-2 lg:col-span-1">
+                <div className="col-span-2 @2xl:col-span-1">
                   <label
                     htmlFor={`${id}-doel`}
-                    className="mb-1 block text-xs font-medium lg:sr-only"
+                    className="mb-1 block text-xs font-medium @2xl:sr-only"
                   >
                     Hoort bij regel {i + 1}
                   </label>
@@ -190,7 +192,7 @@ export function KostenRegelsEditor({
                 <div>
                   <label
                     htmlFor={`${id}-bedrag`}
-                    className="mb-1 block text-xs font-medium lg:sr-only"
+                    className="mb-1 block text-xs font-medium @2xl:sr-only"
                   >
                     Bedrag regel {i + 1}
                   </label>
@@ -225,7 +227,7 @@ export function KostenRegelsEditor({
                 <div>
                   <label
                     htmlFor={`${id}-btw`}
-                    className="mb-1 block text-xs font-medium lg:sr-only"
+                    className="mb-1 block text-xs font-medium @2xl:sr-only"
                   >
                     BTW regel {i + 1}
                   </label>
@@ -244,7 +246,7 @@ export function KostenRegelsEditor({
                     ))}
                   </select>
                 </div>
-                <div className="col-span-2 flex justify-end gap-1 lg:col-span-1">
+                <div className="col-span-2 flex justify-end gap-1 @2xl:col-span-1">
                   {ruimtes.length > 0 && (
                     <button
                       type="button"

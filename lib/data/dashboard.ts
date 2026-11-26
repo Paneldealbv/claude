@@ -10,7 +10,9 @@ import {
 import { formatDatum } from "@/lib/format";
 import { DOCUMENT_TYPE, STATUS_CONTRACT, STATUS_DOCUMENT } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
+import { isGeldigeIsoDatum } from "@/lib/datum";
 import { documentOverzicht } from "./documenten";
+import { laadVoorstellen, type VoorstelRij } from "./herkenning";
 import { laadProjectResultaat } from "./project";
 
 const TIJD = new Intl.DateTimeFormat("nl-NL", {
@@ -36,10 +38,63 @@ function wanneer(tijdstip: string, vandaag: string) {
   return formatDatum(dag);
 }
 
+const PUNT_LABEL = {
+  ontbreekt: "Ontbreekt",
+  "klopt-niet": "Klopt niet",
+  onzeker: "Onzeker",
+} as const;
+
+/** Een AI-voorstel als regel in "Te controleren", met de punten samengevat. */
+function voorstelItem(v: VoorstelRij): ControleItem {
+  const soort = v.soort ? DOCUMENT_TYPE[v.soort].tekst : "AI-voorstel";
+  const datum =
+    v.datum && isGeldigeIsoDatum(v.datum) ? formatDatum(v.datum) : null;
+  let punten: ControleItem["punten"];
+  if (v.vastgelopen || v.status === "mislukt") {
+    punten = [{ soort: "status", tekst: "Uitlezen niet gelukt" }];
+  } else if (v.status === "bezig" || v.status === "wachtrij") {
+    punten = [{ soort: "status", tekst: "Wordt uitgelezen" }];
+  } else {
+    const telling = new Map<keyof typeof PUNT_LABEL, number>();
+    let dubbel = false;
+    for (const p of v.punten) {
+      if (p.soort === "duplicaat") dubbel = true;
+      else telling.set(p.soort, (telling.get(p.soort) ?? 0) + 1);
+    }
+    punten = [
+      ...(dubbel
+        ? [{ soort: "duplicaat" as const, tekst: "Mogelijk dubbel" }]
+        : []),
+      ...[...telling].map(([s, n]) => ({
+        soort: s,
+        tekst: `${PUNT_LABEL[s]}: ${n}`,
+      })),
+    ];
+    if (!punten.length) {
+      punten = [{ soort: "status", tekst: "AI-voorstel, klaar om te boeken" }];
+    }
+  }
+  return {
+    id: v.id,
+    titel: [`${soort}${v.nummer ? ` ${v.nummer}` : ""}`, datum]
+      .filter(Boolean)
+      .join(" · "),
+    leverancier: v.leverancier ?? v.bestand.naam,
+    bedrag:
+      v.totaal === null
+        ? null
+        : v.soort === "creditnota"
+          ? -v.totaal
+          : v.totaal,
+    punten,
+    href: `/te-controleren/${v.id}`,
+  };
+}
+
 /** Alles voor het dashboard van het actieve project. */
 export const laadDashboard = cache(async (projectId: string) => {
   const supabase = await createClient();
-  const [{ invoer, resultaat, vandaag }, documenten, leden, log] =
+  const [{ invoer, resultaat, vandaag }, documenten, leden, log, voorstellen] =
     await Promise.all([
       laadProjectResultaat(projectId),
       documentOverzicht(projectId),
@@ -50,6 +105,7 @@ export const laadDashboard = cache(async (projectId: string) => {
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(8),
+      laadVoorstellen(projectId),
     ]);
 
   const docPerId = new Map(documenten.map((d) => [d.id, d]));
@@ -64,16 +120,20 @@ export const laadDashboard = cache(async (projectId: string) => {
   );
   const basis = dashboardUitResultaat(resultaat, info, { metLinks: true });
 
-  const teControleren: ControleItem[] = documenten
-    .filter((d) => d.status === "concept" || d.status === "te_controleren")
-    .map((d) => ({
-      id: d.id,
-      titel: `${DOCUMENT_TYPE[d.type].tekst}${d.nummer ? ` ${d.nummer}` : ""} · ${formatDatum(d.datum)}`,
-      leverancier: d.titel,
-      bedrag: d.totaal,
-      punten: [{ soort: "status", tekst: STATUS_DOCUMENT[d.status].tekst }],
-      href: `/documenten/${d.id}`,
-    }));
+  // AI-voorstellen eerst (die wachten op controle), dan niet-geboekte documenten.
+  const teControleren: ControleItem[] = voorstellen.map(voorstelItem);
+  teControleren.push(
+    ...documenten
+      .filter((d) => d.status === "concept" || d.status === "te_controleren")
+      .map((d): ControleItem => ({
+        id: d.id,
+        titel: `${DOCUMENT_TYPE[d.type].tekst}${d.nummer ? ` ${d.nummer}` : ""} · ${formatDatum(d.datum)}`,
+        leverancier: d.titel,
+        bedrag: d.totaal,
+        punten: [{ soort: "status", tekst: STATUS_DOCUMENT[d.status].tekst }],
+        href: `/documenten/${d.id}`,
+      })),
+  );
 
   // Activiteit in gewone taal.
   const naam = new Map(leden.map((l) => [l.userId, l.naam]));

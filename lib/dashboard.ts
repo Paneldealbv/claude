@@ -47,7 +47,8 @@ export type ControleItem = {
   id: string;
   titel: string;
   leverancier: string;
-  bedrag: number;
+  /** Centen; null = (nog) onbekend, bijv. bij een AI-voorstel. */
+  bedrag: number | null;
   /** Aantal regels (onbekend = niet tonen). */
   regels?: number;
   punten: {

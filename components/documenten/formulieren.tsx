@@ -1,6 +1,12 @@
 "use client";
 
-import { Ban, BookCheck, RotateCcw, Trash2 } from "lucide-react";
+import {
+  Ban,
+  BookCheck,
+  RotateCcw,
+  Trash2,
+  TriangleExclamationPoint,
+} from "lucide-react";
 import Link from "next/link";
 import { useActionState, useId, useState } from "react";
 import { BestandUpload } from "@/components/invoer/bestand-upload";
@@ -10,7 +16,10 @@ import {
   type KostenRegelInvoer,
 } from "@/components/invoer/kosten-regels-editor";
 import { keuzeKlassen } from "@/components/invoer/keuzes";
-import { LeverancierKeuze } from "@/components/invoer/leverancier-keuze";
+import {
+  LeverancierKeuze,
+  type NieuweLeverancier,
+} from "@/components/invoer/leverancier-keuze";
 import { tekstvakKlassen } from "@/components/offertes/formulieren";
 import { BedragVeld } from "@/components/ui/bedrag-veld";
 import { DatumVeld } from "@/components/ui/datum-veld";
@@ -28,6 +37,7 @@ import {
   documentVerwijderen,
 } from "@/lib/acties/documenten";
 import type { ActieStatus } from "@/lib/acties/project";
+import type { FormulierVeld } from "@/lib/ai/voorstel";
 import { cn } from "@/lib/cn";
 import { DOCUMENT_TYPE, type DocumentSoort } from "@/lib/labels";
 
@@ -67,6 +77,23 @@ export type BestandKeuze = {
 
 const SOORTEN = Object.keys(DOCUMENT_TYPE) as DocumentSoort[];
 
+/** Aandachtspunten van de AI per formulierveld. */
+export type LetOpPerVeld = Partial<Record<FormulierVeld, string[]>>;
+
+function LetOp({ punten }: { punten?: string[] }) {
+  if (!punten?.length) return null;
+  return (
+    <ul className="text-warning mt-1.5 space-y-0.5 text-xs font-medium">
+      {punten.map((p) => (
+        <li key={p} className="flex items-start gap-1.5">
+          <TriangleExclamationPoint className="mt-px size-3.5 shrink-0" />
+          <span>{p}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Factuur, termijnfactuur, eindfactuur, creditnota of bon invoeren. */
 export function DocumentFormulier({
   document,
@@ -75,6 +102,10 @@ export function DocumentFormulier({
   contracten,
   categorieen,
   ruimtes,
+  extractieId,
+  bestandVast = false,
+  letOp = {},
+  nieuweLeverancier,
 }: {
   document: DocumentInvoer;
   bestand?: BestandKeuze | null;
@@ -82,6 +113,13 @@ export function DocumentFormulier({
   contracten: ContractKeuze[];
   categorieen: { id: string; label: string }[];
   ruimtes: { id: string; naam: string }[];
+  /** Opslaan vanuit een AI-voorstel (controlescherm). */
+  extractieId?: string;
+  /** Het bestand hoort vast bij dit formulier (geen ander kiezen). */
+  bestandVast?: boolean;
+  letOp?: LetOpPerVeld;
+  /** Voorstel voor een nieuwe leverancier. */
+  nieuweLeverancier?: NieuweLeverancier | null;
 }) {
   const [status, actie, bezig] = useActionState(documentOpslaan, leeg);
   const f = status.veldfouten ?? {};
@@ -127,6 +165,9 @@ export function DocumentFormulier({
       noValidate
     >
       <input type="hidden" name="id" value={document.id ?? ""} />
+      {extractieId && (
+        <input type="hidden" name="extractieId" value={extractieId} />
+      )}
 
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Soort document</legend>
@@ -158,6 +199,7 @@ export function DocumentFormulier({
         {f.type && (
           <p className="text-critical mt-1 text-xs font-medium">{f.type}</p>
         )}
+        <LetOp punten={letOp.soort} />
       </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -165,9 +207,11 @@ export function DocumentFormulier({
           <LeverancierKeuze
             leveranciers={leveranciers}
             standaard={document.leverancierId}
-            fout={f.nieuweLeverancier}
+            standaardNieuw={nieuweLeverancier}
+            fout={f.nieuweLeverancier ?? f.leverancierId}
           />
-          {!document.leverancierId && (
+          <LetOp punten={letOp.leverancier} />
+          {!document.leverancierId && !nieuweLeverancier && (
             <p className="text-muted mt-1 text-xs">
               {type === "bon"
                 ? "Bijvoorbeeld de bouwmarkt. Mag leeg blijven."
@@ -206,6 +250,7 @@ export function DocumentFormulier({
           {f.contractId && (
             <p className="text-critical text-xs font-medium">{f.contractId}</p>
           )}
+          <LetOp punten={letOp.contract} />
         </div>
         {type === "termijnfactuur" &&
           contract &&
@@ -232,43 +277,63 @@ export function DocumentFormulier({
               </select>
             </div>
           )}
-        <Veld
-          label={type === "bon" ? "Bonnummer (optioneel)" : "Factuurnummer"}
-          naam="nummer"
-          autoComplete="off"
-          defaultValue={document.nummer ?? ""}
-          fout={f.nummer}
-        />
-        <DatumVeld
-          label="Datum"
-          naam="datum"
-          defaultValue={document.datum}
-          fout={f.datum}
-        />
-        {type !== "bon" && (
-          <DatumVeld
-            label="Uiterlijk betalen op (optioneel)"
-            naam="vervalDatum"
-            defaultValue={document.vervalDatum}
-            fout={f.vervalDatum}
+        <div>
+          <Veld
+            label={type === "bon" ? "Bonnummer (optioneel)" : "Factuurnummer"}
+            naam="nummer"
+            autoComplete="off"
+            defaultValue={document.nummer ?? ""}
+            fout={f.nummer}
           />
-        )}
-        <BedragVeld
-          label="Totaal op het document (optioneel)"
-          naam="totaal"
-          defaultValue={document.totaalOpDocument}
-          hint="Incl. BTW. Zo controleert het dashboard of de regels kloppen."
-          fout={f.totaal}
-          onWaarde={setTotaal}
-        />
-        <div className="sm:col-span-2">
-          <BestandUpload
-            label={
-              type === "bon" ? "Bon (foto of PDF)" : "Document (PDF of foto)"
-            }
-            standaard={bestand}
-          />
+          <LetOp punten={letOp.nummer} />
         </div>
+        <div>
+          <DatumVeld
+            label="Datum"
+            naam="datum"
+            defaultValue={document.datum}
+            fout={f.datum}
+          />
+          <LetOp punten={letOp.datum} />
+        </div>
+        {type !== "bon" && (
+          <div>
+            <DatumVeld
+              label="Uiterlijk betalen op (optioneel)"
+              naam="vervalDatum"
+              defaultValue={document.vervalDatum}
+              fout={f.vervalDatum}
+            />
+            <LetOp punten={letOp.vervalDatum} />
+          </div>
+        )}
+        <div>
+          <BedragVeld
+            label={
+              extractieId
+                ? "Totaal op het document"
+                : "Totaal op het document (optioneel)"
+            }
+            naam="totaal"
+            defaultValue={document.totaalOpDocument}
+            hint="Incl. BTW. Zo controleert het dashboard of de regels kloppen."
+            fout={f.totaal}
+            onWaarde={setTotaal}
+          />
+          <LetOp punten={letOp.totaal} />
+        </div>
+        {bestandVast && bestand ? (
+          <input type="hidden" name="bestandId" value={bestand.id} />
+        ) : (
+          <div className="sm:col-span-2">
+            <BestandUpload
+              label={
+                type === "bon" ? "Bon (foto of PDF)" : "Document (PDF of foto)"
+              }
+              standaard={bestand}
+            />
+          </div>
+        )}
       </div>
 
       <fieldset className="space-y-2">
@@ -278,6 +343,7 @@ export function DocumentFormulier({
             ? "Vul de bedragen in zoals op de creditnota (zonder minteken); ze worden van de kosten afgetrokken."
             : "Verdeel het document over contracten of categorieën. Eén bon kan over meerdere regels; het document zelf wordt één keer bewaard."}
         </p>
+        <LetOp punten={letOp.regels} />
         <div className="pt-1">
           <KostenRegelsEditor
             doelen={doelen}
