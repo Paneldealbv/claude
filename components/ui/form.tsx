@@ -6,7 +6,6 @@ import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
 import { knopKlassen, type KnopVariant } from "./knop";
 
-
 export function Veld({
   label,
   naam,

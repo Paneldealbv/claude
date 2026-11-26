@@ -2,6 +2,7 @@
 
 import { Check, Copy } from "lucide-react";
 import { useActionState, useState } from "react";
+import { DatumVeld } from "@/components/ui/datum-veld";
 import { Melding, Veld, VerzendKnop } from "@/components/ui/form";
 import {
   profielOpslaan,
@@ -34,10 +35,9 @@ export function ProjectAanmakenFormulier() {
         defaultValue={status.waarden?.adres}
         fout={status.veldfouten?.adres}
       />
-      <Veld
+      <DatumVeld
         label="Verwachte oplevering (optioneel)"
         naam="oplevering"
-        type="date"
         defaultValue={status.waarden?.oplevering}
         fout={status.veldfouten?.oplevering}
       />
@@ -188,11 +188,10 @@ export function ProjectFormulier({
           defaultValue={adres ?? ""}
           fout={status.veldfouten?.adres}
         />
-        <Veld
+        <DatumVeld
           label="Verwachte oplevering"
           naam="oplevering"
-          type="date"
-          defaultValue={oplevering ?? ""}
+          defaultValue={oplevering}
           fout={status.veldfouten?.oplevering}
         />
       </fieldset>

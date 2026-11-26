@@ -143,14 +143,50 @@ async function main() {
       "A zonder project komt op /welkom",
     );
     await pA.getByLabel("Naam van het project").fill(`E2E-project ${sfx}`);
+    // Datumveld: vrij typen ("15-5-27") wordt 15-05-2027, ook in een
+    // Engelstalige browser.
+    const oplevering = pA.getByLabel("Verwachte oplevering (optioneel)");
+    await oplevering.fill("15-5-27");
+    await oplevering.blur();
+    ok(
+      (await oplevering.inputValue()) === "15-05-2027",
+      "datumveld toont getypte datum als DD-MM-JJJJ",
+    );
     await pA.getByRole("button", { name: "Project aanmaken" }).click();
     await pA.waitForURL("**/dashboard", { timeout: 20000 });
     ok(
       await pA.getByText(`E2E-project ${sfx}`).first().isVisible(),
       "A ziet het nieuwe project op het dashboard",
     );
+    ok(
+      (await pA.getByText("Oplevering 15-05-2027").count()) > 0,
+      "opleverdatum opgeslagen en getoond als 15-05-2027",
+    );
     if (SCREENSHOTS)
       await pA.screenshot({ path: `${SCREENSHOTS}/e2e-dashboard.png` });
+
+    // Ongeldige datum (31 februari) wordt geweigerd, lokaal én door de server.
+    await pA.goto(`${APP}/instellingen`);
+    const datumVeld = pA.getByLabel("Verwachte oplevering", { exact: true });
+    ok(
+      (await datumVeld.inputValue()) === "15-05-2027",
+      "instellingen tonen de opleverdatum als DD-MM-JJJJ",
+    );
+    await datumVeld.fill("31-02-2027");
+    await datumVeld.blur();
+    ok(
+      (await pA.getByText("Gebruik DD-MM-JJJJ").count()) > 0,
+      "ongeldige datum geeft direct een melding",
+    );
+    await pA.getByRole("button", { name: "Opslaan" }).first().click();
+    await pA.waitForLoadState("networkidle");
+    await pA.reload();
+    ok(
+      (await pA
+        .getByLabel("Verwachte oplevering", { exact: true })
+        .inputValue()) === "15-05-2027",
+      "server weigert ongeldige datum (opgeslagen datum ongewijzigd)",
+    );
 
     await pA.goto(`${APP}/instellingen`);
     await pA.getByLabel("E-mailadres").fill(accounts.b.email);
