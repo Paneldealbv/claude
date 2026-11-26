@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBedragInvoer,
   formatDatum,
   formatEuro,
   formatEuroKort,
@@ -91,5 +92,12 @@ describe("formatDatum", () => {
 
   it("weigert een ongeldige datum", () => {
     expect(() => formatDatum("geen datum")).toThrow(RangeError);
+  });
+});
+
+describe("formatBedragInvoer", () => {
+  it("toont centen zonder €-teken voor in een invoerveld", () => {
+    expect(formatBedragInvoer(2_400_000)).toBe("24.000,00");
+    expect(formatBedragInvoer(-5)).toBe("-0,05");
   });
 });

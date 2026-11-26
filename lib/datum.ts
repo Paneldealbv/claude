@@ -71,3 +71,18 @@ export function isoNaarNl(waarde: string | null | undefined): string {
   const [j, m, d] = waarde.split("-");
   return `${d}-${m}-${j}`;
 }
+
+/** De datum van vandaag in Nederland, als JJJJ-MM-DD. */
+export function vandaagIso(nu: Date = new Date()): string {
+  const delen = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Amsterdam",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(nu)
+      .map((d) => [d.type, d.value]),
+  );
+  return `${delen.year}-${delen.month}-${delen.day}`;
+}

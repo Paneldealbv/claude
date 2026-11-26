@@ -123,3 +123,16 @@ export function formatDatum(datum: string | Date): string {
   );
   return `${delen.day}-${delen.month}-${delen.year}`;
 }
+
+const invoerFormatter = new Intl.NumberFormat("nl-NL", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Bedrag voor in een invoerveld, zonder €-teken: 2400000 → "24.000,00". */
+export function formatBedragInvoer(centen: number): string {
+  if (!Number.isInteger(centen)) {
+    throw new TypeError(`Bedrag moet in hele centen zijn, kreeg: ${centen}`);
+  }
+  return invoerFormatter.format(centen / 100);
+}

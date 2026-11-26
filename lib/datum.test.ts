@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isGeldigeIsoDatum, isoNaarNl, parseDatum } from "./datum";
+import { isGeldigeIsoDatum, isoNaarNl, parseDatum, vandaagIso } from "./datum";
 
 describe("parseDatum", () => {
   it.each([
@@ -51,5 +51,13 @@ describe("isoNaarNl en isGeldigeIsoDatum", () => {
     expect(isGeldigeIsoDatum("2028-02-29")).toBe(true);
     expect(isGeldigeIsoDatum("2027-02-29")).toBe(false);
     expect(isGeldigeIsoDatum("2027-5-15")).toBe(false);
+  });
+});
+
+describe("vandaagIso", () => {
+  it("gebruikt de Nederlandse kalenderdag", () => {
+    // 23:30 UTC op 31 december is in Amsterdam al 1 januari.
+    expect(vandaagIso(new Date("2026-12-31T23:30:00Z"))).toBe("2027-01-01");
+    expect(vandaagIso(new Date("2026-06-15T10:00:00Z"))).toBe("2026-06-15");
   });
 });
