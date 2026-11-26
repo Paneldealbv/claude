@@ -58,6 +58,23 @@ begin
   raise exception 'MISLUKT - % (werd NIET geweigerd)', p_label;
 end $$;
 
+-- Als test.faalt, maar de uitgestelde controles lopen pas NA de opdracht,
+-- zoals bij een functie die alles in één transactie doet (bijv.
+-- save_cost_document): SET CONSTRAINTS ALL IMMEDIATE voert de openstaande
+-- controles op dat moment alsnog uit.
+create function test.faalt_bij_afronden(p_sql text, p_label text) returns void
+language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+    set constraints all immediate;
+  exception when others then
+    raise notice 'ok - % (geweigerd: %)', p_label, sqlerrm;
+    return;
+  end;
+  raise exception 'MISLUKT - % (werd NIET geweigerd)', p_label;
+end $$;
+
 -- Voert SQL uit en geeft het aantal geraakte rijen terug.
 create function test.rijen(p_sql text) returns bigint
 language plpgsql as $$
@@ -509,8 +526,28 @@ select test.faalt($$insert into public.payments (project_id, cost_document_id, a
 select test.faalt($$update public.cost_documents set status = 'geboekt',
   reviewed_by = '$$ || :'A' || $$', reviewed_at = now(), booked_at = now()
   where id = '$$ || :'bon' || $$'$$, 'boeken geweigerd als regels ≠ totaal op bon (1 cent verschil)');
+-- Boeken door een ingelogde gebruiker legt de database zelf vast (wie en
+-- wanneer); zonder gebruiker (beheertaak) en zonder bevestiging: geweigerd.
+begin;
+insert into public.cost_documents (project_id, type, document_date, stated_total_incl_cents)
+values (:'pid', 'bon', '2026-11-21', 12100) returning id as bon3 \gset
+insert into public.cost_lines (project_id, cost_document_id, category_id,
+  amount_excl_cents, vat_cents, amount_incl_cents)
+values (:'pid', :'bon3', :'cat_keuken', 10000, 2100, 12100);
+commit;
+reset role;
+select set_config('request.jwt.claims', '{}', false);
 select test.faalt($$update public.cost_documents set status = 'geboekt'
-  where id = '$$ || :'bon' || $$'$$, 'boeken zonder bevestiging door gebruiker geweigerd');
+  where id = '$$ || :'bon3' || $$'$$, 'boeken zonder gebruiker en zonder bevestiging geweigerd');
+select test.als(:'A');
+update public.cost_documents set status = 'geboekt' where id = :'bon3';
+select test.ok((select reviewed_by from public.cost_documents where id = :'bon3') = :'A'::uuid
+           and (select reviewed_at from public.cost_documents where id = :'bon3') is not null
+           and (select booked_at from public.cost_documents where id = :'bon3') is not null,
+  'boeken legt automatisch vast wie (A) en wanneer');
+update public.cost_documents set status = 'concept' where id = :'bon3';
+select test.ok((select booked_at from public.cost_documents where id = :'bon3') is null,
+  'terugzetten naar concept wist het boekmoment');
 
 -- Financiering
 select test.faalt($$update public.funding_sources set amount_cents = 9000000
@@ -534,6 +571,119 @@ select test.faalt($$insert into public.files (project_id, storage_path, original
 select test.faalt($$insert into public.cost_documents (project_id, type, supplier_id,
   document_number, document_date) values ('$$ || :'pid' || $$', 'factuur', '$$ || :'sup' || $$',
   'F-001', '2026-11-02')$$, 'dubbel factuurnummer bij dezelfde leverancier geweigerd');
+
+-- =============================================================================
+-- 7b. Documenten in één keer opslaan en verwijderen (0011)
+-- =============================================================================
+select test.als(:'B');
+insert into public.rooms (project_id, name) values (:'pid', 'Hal') returning id as room_hal \gset
+insert into public.contract_installments (project_id, contract_id, sequence, description, percentage_bp)
+values (:'pid', :'con', 1, 'Aanbetaling', 3000) returning id as termijn \gset
+
+select jsonb_build_object('project_id', :'pid', 'type', 'termijnfactuur', 'status', 'geboekt',
+  'supplier_id', :'sup', 'contract_id', :'con', 'installment_id', :'termijn',
+  'document_number', 'F-100', 'document_date', '2026-11-20', 'due_date', '2026-12-04',
+  'stated_total_incl_cents', 460000) as kop \gset
+select jsonb_build_array(
+  jsonb_build_object('description', 'Termijn 1', 'contract_line_id', :'conline',
+    'amount_excl_cents', 371901, 'vat_rate_bp', 2100, 'vat_cents', 78099, 'amount_incl_cents', 450000),
+  jsonb_build_object('description', 'Extra grepen', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 8264, 'vat_rate_bp', 2100, 'vat_cents', 1736, 'amount_incl_cents', 10000,
+    'rooms', jsonb_build_array(:'room_keuken', :'room_woon'))) as regels \gset
+
+select count(*) as docs_voor from public.cost_documents \gset
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"stated_total_incl_cents": 460001}')::text, :'regels'),
+  'opslaan als geboekt geweigerd als regels ≠ totaal op het document');
+select test.ok((select count(*) from public.cost_documents) = :docs_voor,
+  'na een geweigerde opslag staat er niets half in de database');
+
+select public.save_cost_document(:'kop'::jsonb, :'regels'::jsonb) as doc2 \gset
+select test.ok(
+  (select status from public.cost_documents where id = :'doc2') = 'geboekt'
+  and (select reviewed_by from public.cost_documents where id = :'doc2') = :'B'::uuid
+  and (select booked_at from public.cost_documents where id = :'doc2') is not null
+  and (select string_agg(sort_order::text, ',' order by sort_order)
+       from public.cost_lines where cost_document_id = :'doc2') = '1,2'
+  and (select category_id from public.cost_lines
+       where cost_document_id = :'doc2' and sort_order = 1) = :'cat_keuken'::uuid
+  and (select string_agg(a.share_bp::text, ',' order by a.share_bp)
+       from public.room_allocations a join public.cost_lines l on l.id = a.cost_line_id
+       where l.cost_document_id = :'doc2') = '5000,5000',
+  'B slaat een geboekte termijnfactuur met regels en ruimteverdeling in één keer op');
+select booked_at as geboekt_op from public.cost_documents where id = :'doc2' \gset
+
+insert into public.payments (project_id, cost_document_id, amount_cents, paid_on)
+values (:'pid', :'doc2', 300000, '2026-11-25');
+
+-- Correctie van een geboekt én (deels) betaald document, in één keer.
+select (:'kop'::jsonb || jsonb_build_object('id', :'doc2', 'stated_total_incl_cents', 462000)) as kop \gset
+select jsonb_set(:'regels'::jsonb, '{1}', jsonb_build_object('description', 'Extra grepen',
+  'category_id', :'cat_keuken', 'amount_excl_cents', 9917, 'vat_rate_bp', 2100,
+  'vat_cents', 2083, 'amount_incl_cents', 12000,
+  'rooms', jsonb_build_array(:'room_keuken', :'room_woon', :'room_hal'))) as regels \gset
+select public.save_cost_document(:'kop'::jsonb, :'regels'::jsonb) as doc2_opnieuw \gset
+select test.ok(:'doc2_opnieuw' = :'doc2'
+  and (select sum(amount_incl_cents) from public.cost_lines where cost_document_id = :'doc2') = 462000
+  and (select string_agg(a.share_bp::text, ',' order by a.share_bp)
+       from public.room_allocations a join public.cost_lines l on l.id = a.cost_line_id
+       where l.cost_document_id = :'doc2') = '3333,3333,3334'
+  and (select booked_at from public.cost_documents where id = :'doc2') = :'geboekt_op'::timestamptz
+  and (select sum(amount_cents) from public.payments where cost_document_id = :'doc2') = 300000,
+  'geboekt en betaald document in één keer gecorrigeerd (ruimtes 3333/3333/3334, boekmoment blijft)');
+
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"stated_total_incl_cents": 200000}')::text,
+    jsonb_build_array(jsonb_build_object('description', 'te weinig', 'category_id', :'cat_keuken',
+      'amount_excl_cents', 165289, 'vat_rate_bp', 2100, 'vat_cents', 34711,
+      'amount_incl_cents', 200000))::text),
+  'correctie geweigerd als het totaal lager wordt dan wat al betaald is');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"status": "concept"}')::text, :'regels'),
+  'terugzetten naar concept geweigerd zolang er betalingen zijn');
+select test.ok((select count(*) from public.cost_lines where cost_document_id = :'doc2') = 2
+  and (select sum(amount_incl_cents) from public.cost_lines where cost_document_id = :'doc2') = 462000
+  and (select status from public.cost_documents where id = :'doc2') = 'geboekt',
+  'na geweigerde correcties is het document ongewijzigd');
+
+insert into public.contracts (project_id, supplier_id, title)
+values (:'pid', :'sup', 'Ander contract') returning id as con2 \gset
+insert into public.contract_installments (project_id, contract_id, sequence, description, amount_incl_cents)
+values (:'pid', :'con2', 1, 'Termijn', 100000) returning id as termijn2 \gset
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || jsonb_build_object('installment_id', :'termijn2', 'document_number', 'F-101'))::text,
+    :'regels'),
+  'termijn van een ander contract geweigerd');
+
+select test.als(:'D');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || '{"document_number": "F-102"}')::text, :'regels'),
+  'lezer D kan geen documenten opslaan');
+select test.faalt_bij_afronden(format('select public.delete_cost_document(%L)', :'doc2'),
+  'lezer D kan geen documenten verwijderen');
+select test.als(:'C');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || '{"document_number": "F-103"}')::text, :'regels'),
+  'C (geen toegang) kan geen documenten opslaan in het project');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    :'kop', :'regels'),
+  'C (geen toegang) kan een document van het project niet overschrijven');
+select test.faalt_bij_afronden(format('select public.delete_cost_document(%L)', :'doc2'),
+  'C (geen toegang) kan geen documenten verwijderen');
+select test.anoniem();
+select test.faalt($$select public.save_cost_document('{}'::jsonb, '[]'::jsonb)$$,
+  'niet ingelogd: documenten opslaan geweigerd');
+select test.faalt($$select public.delete_cost_document(gen_random_uuid())$$,
+  'niet ingelogd: documenten verwijderen geweigerd');
+
+select test.als(:'B');
+-- (psql laat een variabele weg als de waarde NULL is: daarom 'geen')
+select coalesce(public.delete_cost_document(:'doc2')::text, 'geen') as verwijderd_bestand \gset
+select test.ok(:'verwijderd_bestand' = 'geen'
+  and not exists (select 1 from public.cost_documents where id = :'doc2')
+  and not exists (select 1 from public.payments where cost_document_id = :'doc2')
+  and not exists (select 1 from public.cost_lines where cost_document_id = :'doc2'),
+  'B verwijdert een betaald document in één keer, met regels en betalingen');
 
 -- =============================================================================
 -- 8. Opruimen: een eigenaar kan het eigen project verwijderen

@@ -1446,6 +1446,7 @@ export type Database = {
         }
         Returns: string
       }
+      delete_cost_document: { Args: { p_document: string }; Returns: string }
       get_invite: {
         Args: { p_token: string }
         Returns: {
@@ -1457,6 +1458,10 @@ export type Database = {
         }[]
       }
       revoke_invite: { Args: { p_invite: string }; Returns: undefined }
+      save_cost_document: {
+        Args: { p_document: Json; p_lines: Json }
+        Returns: string
+      }
     }
     Enums: {
       change_status: "voorgesteld" | "akkoord" | "afgewezen"
