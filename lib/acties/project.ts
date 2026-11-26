@@ -82,8 +82,9 @@ export async function projectAanmaken(
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_project", {
     p_name: invoer.data.naam,
-    p_address: invoer.data.adres || null,
-    p_expected_completion: invoer.data.oplevering || null,
+    // Lege velden weglaten: de databasefunctie gebruikt dan null.
+    p_address: invoer.data.adres || undefined,
+    p_expected_completion: invoer.data.oplevering || undefined,
   });
   if (error || !data) return { fout: dbFout(error), waarden };
 
