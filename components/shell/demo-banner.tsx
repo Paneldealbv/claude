@@ -1,4 +1,5 @@
 import { FlaskConical } from "lucide-react";
+import Link from "next/link";
 
 /** Duidelijke melding dat de getoonde cijfers verzonnen zijn. */
 export function DemoBanner() {
@@ -9,10 +10,15 @@ export function DemoBanner() {
     >
       <FlaskConical className="mt-0.5 size-4 shrink-0" />
       <p>
-        <strong className="font-semibold">Demo-gegevens.</strong> De cijfers,
-        namen en documenten op deze pagina zijn verzonnen en dienen alleen om
-        het ontwerp te beoordelen. Je echte cijfers verschijnen hier zodra je
-        budget en documenten invoert.
+        <strong className="font-semibold">Demo-gegevens.</strong> Een
+        voorbeeldproject met verzonnen cijfers, namen en documenten, om te zien
+        hoe het dashboard eruitziet bij een bouw in volle gang.{" "}
+        <Link
+          href="/dashboard"
+          className="font-semibold underline underline-offset-2"
+        >
+          Terug naar jouw dashboard
+        </Link>
       </p>
     </div>
   );

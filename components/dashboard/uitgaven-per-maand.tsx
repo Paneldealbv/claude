@@ -63,7 +63,23 @@ export function UitgavenPerMaand({ data }: { data: Punt[] }) {
     naam: maandnamen.format(new Date(`${d.maand}-01T00:00:00Z`)),
   }));
   const totaal = rijen.at(-1)?.cumulatief ?? 0;
-  const gemiddeld = Math.round(totaal / data.length);
+  const gemiddeld = data.length ? Math.round(totaal / data.length) : 0;
+
+  if (!data.length) {
+    return (
+      <Card aria-labelledby="uitgaven-titel" className="flex flex-col">
+        <CardHeader
+          id="uitgaven-titel"
+          title="Betaald per maand"
+          description="Alle betalingen, inclusief BTW"
+        />
+        <p className="text-muted px-5 pt-3 pb-5 text-sm sm:px-6">
+          Nog geen betalingen. Zodra je betalingen vastlegt bij een factuur of
+          bon, zie je hier per maand wat er is betaald.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card aria-labelledby="uitgaven-titel" className="flex flex-col">

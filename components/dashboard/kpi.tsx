@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
-import { formatEuro } from "@/lib/format";
+import { formatEuro, formatEuroVerschil } from "@/lib/format";
 
 /** KPI-tegel: label, waarde, toelichting en optioneel een meter of status. */
 export function KpiCard({
@@ -124,6 +125,93 @@ export function HeroRuimte({
             <dt className="text-muted text-xs">Prognose eindkosten</dt>
             <dd className="mt-0.5 font-medium tabular-nums">
               {formatEuro(prognose, { centen: false })}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Hoofdgetal zolang de financiering nog niet is ingevuld: de verwachte
+ * eindkosten ten opzichte van het budget.
+ */
+export function HeroPrognose({
+  prognose,
+  budget,
+}: {
+  prognose: number;
+  budget: number;
+}) {
+  const aandeel = budget > 0 ? prognose / budget : 0;
+  const binnen = prognose <= budget;
+  return (
+    <Card
+      as="div"
+      className="relative flex flex-col overflow-hidden p-6 sm:p-7"
+      aria-labelledby="prognose-label"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-24 -right-24 size-64 rounded-full opacity-60 blur-3xl"
+        style={{
+          background:
+            "radial-gradient(circle, var(--accent-soft) 0%, transparent 70%)",
+        }}
+      />
+      <p
+        id="prognose-label"
+        className="text-muted relative text-sm font-medium"
+      >
+        Prognose eindkosten
+      </p>
+      <p
+        className={cn(
+          "relative mt-2 text-5xl font-semibold tracking-tight whitespace-nowrap sm:text-[56px] sm:leading-none",
+          !binnen && "text-critical",
+        )}
+      >
+        {formatEuro(prognose, { centen: false })}
+      </p>
+      <p className="text-muted relative mt-3 max-w-sm text-sm leading-relaxed">
+        Wat de woning naar verwachting gaat kosten. Zodra je{" "}
+        <Link
+          href="/financiering"
+          className="text-accent-ink font-medium hover:underline"
+        >
+          financiering
+        </Link>{" "}
+        is ingevuld, zie je hier hoeveel ruimte je overhoudt.
+      </p>
+      <div className="relative mt-auto pt-6">
+        <div
+          role="meter"
+          aria-label="Prognose als deel van het budget"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(aandeel * 100)}
+          className="bg-accent-soft h-2 overflow-hidden rounded-full"
+        >
+          <div
+            className={cn(
+              "h-full rounded-full",
+              binnen ? "bg-series-1" : "bg-critical",
+            )}
+            style={{ width: `${Math.min(1, aandeel) * 100}%` }}
+          />
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <dt className="text-muted text-xs">Budget</dt>
+            <dd className="mt-0.5 font-medium tabular-nums">
+              {formatEuro(budget, { centen: false })}
+            </dd>
+          </div>
+          <div className="text-right">
+            <dt className="text-muted text-xs">Verschil met budget</dt>
+            <dd className="mt-0.5 font-medium tabular-nums">
+              {formatEuroVerschil(prognose - budget, { centen: false })}
             </dd>
           </div>
         </dl>

@@ -7,7 +7,7 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | Onderdeel                    | Waar                                             |
 | ---------------------------- | ------------------------------------------------ |
 | Database, Auth, Storage      | Supabase-project in **eu-central-1 (Frankfurt)** |
-| Databasestructuur            | `supabase/migrations/*.sql` (8 migraties)        |
+| Databasestructuur            | `supabase/migrations/*.sql` (12 migraties)       |
 | Beveiligingstests (lokaal)   | `npm run test:db` → `supabase/tests/`            |
 | Migraties en Auth instellen  | `scripts/supabase-beheer.mjs` (Management API)   |
 | Supabase-koppeling in de app | `lib/supabase/`, `proxy.ts`, `lib/auth.ts`       |
@@ -19,6 +19,8 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | `NEXT_PUBLIC_SUPABASE_URL`                 | nee                          | `.env.local`, Vercel                                    |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`     | nee, voor de browser bedoeld | `.env.local`, Vercel                                    |
 | `NEXT_PUBLIC_SITE_URL`                     | nee                          | `.env.local`, Vercel                                    |
+| `ANTHROPIC_API_KEY` (AI-herkenning)        | **ja**, alleen op de server  | `.env.local`, Vercel (Production en Preview)            |
+| `ANTHROPIC_WORKSPACE_ID` (optioneel)       | nee                          | alleen bij een sleutel met bereik "Organisatie"         |
 | Secret key (`sb_secret_…`)                 | **ja**                       | wordt door de app niet gebruikt                         |
 | Persoonlijk toegangstoken (Management API) | **ja**                       | alleen tijdelijk bij het uitvoeren van het beheerscript |
 | Databasewachtwoord                         | **ja**                       | alleen bij de eigenaar                                  |
@@ -60,6 +62,12 @@ in de code of in GitHub.
   lidmaatschappen zijn niet direct te wijzigen.
 - **Hulpfuncties** staan in het schema `private` (niet via de API bereikbaar),
   met een vast `search_path`.
+- **Documenten opslaan** (0011): `save_cost_document` en
+  `delete_cost_document` doen document, regels, ruimteverdeling en
+  betalingen in één transactie. Ze draaien met de rechten van de gebruiker
+  (`security invoker`), dus Row Level Security blijft gelden; alleen
+  ingelogde gebruikers mogen ze aanroepen. Bij boeken legt de database zelf
+  vast wie (de ingelogde gebruiker) en wanneer.
 - **Opslag**: privé bucket `documenten` (max 20 MB, PDF en foto's). Bestanden
   staan onder `<project-id>/…` en zijn alleen voor leden van dat project.
 
@@ -67,7 +75,7 @@ in de code of in GitHub.
 
 `npm run test:db` start een tijdelijke Postgres, bootst de Supabase-rollen
 na (inclusief de strengere standaardrechten van nieuwe Supabase-projecten),
-voert alle migraties uit en controleert 93 punten, waaronder:
+voert alle migraties uit en controleert 111 punten, waaronder:
 
 - A (eigenaar), B (bewerker) en D (lezer) zien **exact dezelfde gegevens**
   in alle tabellen;
@@ -80,15 +88,20 @@ voert alle migraties uit en controleert 93 punten, waaronder:
 - ingelogde gebruikers kunnen geen tabel leegmaken (TRUNCATE) en geen
   technische kolommen (id, project_id, created_by) wijzigen;
 - account verwijderen als laatste eigenaar: een ander lid wordt eigenaar, of
-  het project wordt opgeruimd als er geen leden meer zijn.
+  het project wordt opgeruimd als er geen leden meer zijn;
+- documenten opslaan in één keer: een geweigerde opslag laat niets half
+  achter, een geboekt en betaald document kan worden gecorrigeerd zolang het
+  klopt, lezers en niet-leden kunnen niets opslaan of verwijderen.
 
 Daarnaast:
 
-- **Live-controle** (`npm run supabase -- livetest`): 9 controles op de echte
+- **Live-controle** (`npm run supabase -- livetest`): 10 controles op de echte
   database in één transactie die altijd wordt teruggedraaid.
 - **End-to-end** (`npm run test:e2e`): drie tijdelijke accounts doorlopen de
-  echte app (inloggen, project aanmaken, uitnodigen, accepteren) en de API;
-  20 controles. Accounts en project worden daarna volledig verwijderd.
+  echte app (inloggen, project, uitnodigen, budget, offertes, contracten,
+  facturen, bonnen, betalingen, dashboard, rapportages en export) en de API;
+  101 controles. Accounts, project en bestanden worden daarna volledig
+  verwijderd.
 
 ## Rechten in een nieuw Supabase-project
 
@@ -112,11 +125,55 @@ mailserver (bijv. Resend of Brevo, gratis te starten):
 
 ## Online zetten (Vercel)
 
-1. vercel.com → **Add New → Project** → kies de GitHub-repository en de
-   branch met deze code.
-2. Bij **Environment Variables**:
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
-   `NEXT_PUBLIC_SITE_URL` (het Vercel-adres, bijv. `https://nieuwbouw-dashboard.vercel.app`).
-3. **Deploy**.
-4. Het Vercel-adres toevoegen aan de toegestane links in Supabase
-   (`SITE_URLS=… node scripts/supabase-beheer.mjs auth`).
+Productie: `https://nieuwbouw-dashboard-paneldeal.vercel.app` (vanaf `main`).
+
+1. vercel.com → **Add New → Project** → **GitHub** → repository `claude`.
+2. **Environment Variables**: `NEXT_PUBLIC_SUPABASE_URL` en
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. `NEXT_PUBLIC_SITE_URL` is optioneel:
+   zonder deze waarde gebruikt de app het adres van het verzoek.
+3. **Deploy**. Serverfuncties draaien in Frankfurt (`fra1`, zie `vercel.json`).
+4. **Settings → Deployment Protection → Vercel Authentication: Disabled.**
+   Anders moet iedere bezoeker eerst bij Vercel inloggen; de app heeft een
+   eigen login en de database eigen beveiliging.
+5. Het productie-adres als Site URL in Supabase Auth zetten:
+   `SITE_URLS=https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
+
+### Eigen domein
+
+1. Vercel → project → **Settings → Domains → Add**: bijvoorbeeld
+   `nieuwbouw.jouwdomein.nl`. Vercel toont welk DNS-record je bij je
+   domeinregistrar zet (meestal een CNAME naar `cname.vercel-dns.com`).
+2. Zodra het domein actief is: in Vercel `NEXT_PUBLIC_SITE_URL` op
+   `https://nieuwbouw.jouwdomein.nl` zetten (Production) en opnieuw deployen.
+3. Het domein toevoegen aan Supabase Auth (links in e-mails):
+   `SITE_URLS=https://nieuwbouw.jouwdomein.nl,https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
+4. Controle: `APP_URL=https://nieuwbouw.jouwdomein.nl npm run test:e2e`.
+
+### AI-herkenning aanzetten
+
+1. Maak een API-sleutel aan op console.anthropic.com (**API Keys → Create
+   Key**) en zet een bestedingslimiet onder **Billing → Limits**.
+2. Vercel → project → **Settings → Environment Variables**: naam
+   `ANTHROPIC_API_KEY`, de sleutel als waarde, voor **Production** en
+   **Preview**. Nooit in de code of in GitHub.
+3. Opnieuw deployen (**Deployments → … → Redeploy**), want een nieuwe variabele
+   geldt pas na een deploy.
+
+Maak de sleutel binnen een workspace: in de lijst met API-sleutels staat bij
+**Bereik** dan de naam van de workspace, niet "Organisatie". Een sleutel met
+bereik "Organisatie" werkt alleen als je ook `ANTHROPIC_WORKSPACE_ID` instelt
+(het id van de workspace, `wrkspc_…`). Lukt het uitlezen niet, dan staat de
+reden op het controlescherm onder "Technische details".
+
+**Sleutel gewijzigd?** Elke deployment houdt de sleutel die gold toen hij werd
+gemaakt. Deploy dus opnieuw: voor de live site de Production-deployment, voor
+de testversie van een branch de nieuwste deployment van die branch (of push
+een nieuwe commit). Weigert Anthropic de sleutel, dan noemt het controlescherm
+de laatste vier tekens van de sleutel die de app gebruikt. Zo zie je of er nog
+een oude sleutel in zit.
+
+Zonder sleutel werkt de app gewoon; alleen het automatisch uitlezen staat uit.
+
+Controle na een deploy: `APP_URL=https://nieuwbouw-dashboard-paneldeal.vercel.app npm run test:e2e`
+(ruim 100 controles met tijdelijke accounts die daarna worden verwijderd; met
+AI-sleutel ook een echte herkenning van een testfactuur).

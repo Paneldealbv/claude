@@ -10,7 +10,7 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Camera alleen voor deze site (bonnen fotograferen, latere fase).
+  // Camera alleen voor deze site (bonnen fotograferen).
   {
     key: "Permissions-Policy",
     value: "camera=(self), microphone=(), geolocation=(), payment=()",
@@ -19,10 +19,15 @@ const securityHeaders = [
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains",
   },
+  // Geen gedeelde browsercontext met pagina's van andere sites.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // De Content Security Policy (met nonce) zet proxy.ts per verzoek.
 ];
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Excel-export: als gewone Node-module laden in plaats van te bundelen.
+  serverExternalPackages: ["exceljs"],
   turbopack: {
     rules: {
       "*.css": {

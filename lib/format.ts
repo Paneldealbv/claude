@@ -123,3 +123,34 @@ export function formatDatum(datum: string | Date): string {
   );
   return `${delen.day}-${delen.month}-${delen.year}`;
 }
+
+const invoerFormatter = new Intl.NumberFormat("nl-NL", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Bedrag voor in een invoerveld, zonder €-teken: 2400000 → "24.000,00". */
+export function formatBedragInvoer(centen: number): string {
+  if (!Number.isInteger(centen)) {
+    throw new TypeError(`Bedrag moet in hele centen zijn, kreeg: ${centen}`);
+  }
+  return invoerFormatter.format(centen / 100);
+}
+
+/** Percentage in basispunten (385 = 3,85%) als "3,85%". */
+export function formatProcent(basispunten: number): string {
+  return `${(basispunten / 100).toLocaleString("nl-NL", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+/**
+ * Ingevoerd percentage ("3,85", "3.85%", "4") naar basispunten (385).
+ * Hooguit twee decimalen; `null` bij ongeldige invoer.
+ */
+export function parseProcent(invoer: string): number | null {
+  const tekst = invoer.replace(/%|\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(tekst)) return null;
+  return Math.round(Number(tekst) * 100);
+}

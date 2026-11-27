@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { headers } from "next/headers";
 import { themaScript } from "@/lib/thema";
 import "./globals.css";
 
@@ -15,6 +16,16 @@ export const metadata: Metadata = {
   },
   description:
     "Budgetten, offertes, facturen en bonnetjes van onze nieuwbouwwoning op één plek.",
+  applicationName: "Nieuwbouw Dashboard",
+  appleWebApp: {
+    capable: true,
+    title: "Nieuwbouw",
+    statusBarStyle: "default",
+  },
+  icons: { apple: "/apple-touch-icon.png" },
+  // Privé gegevens: nooit in zoekmachines.
+  robots: { index: false, follow: false },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -24,7 +35,9 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Nonce uit de Content Security Policy (zie proxy.ts) voor ons eigen script.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html
       lang="nl"
@@ -32,7 +45,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themaScript }} />
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: themaScript }}
+        />
       </head>
       <body className="min-h-full">{children}</body>
     </html>

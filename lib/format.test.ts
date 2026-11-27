@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBedragInvoer,
   formatDatum,
   formatEuro,
   formatEuroKort,
   formatEuroVerschil,
+  formatProcent,
   parseEuro,
+  parseProcent,
 } from "./format";
 
 // Intl gebruikt een vaste spatie (U+00A0) tussen € en het bedrag.
@@ -91,5 +94,30 @@ describe("formatDatum", () => {
 
   it("weigert een ongeldige datum", () => {
     expect(() => formatDatum("geen datum")).toThrow(RangeError);
+  });
+});
+
+describe("formatBedragInvoer", () => {
+  it("toont centen zonder €-teken voor in een invoerveld", () => {
+    expect(formatBedragInvoer(2_400_000)).toBe("24.000,00");
+    expect(formatBedragInvoer(-5)).toBe("-0,05");
+  });
+});
+
+describe("formatProcent / parseProcent", () => {
+  it("toont basispunten als Nederlands percentage", () => {
+    expect(formatProcent(385)).toBe("3,85%");
+    expect(formatProcent(400)).toBe("4%");
+    expect(formatProcent(50)).toBe("0,5%");
+  });
+  it("leest percentages met komma, punt of procentteken", () => {
+    expect(parseProcent("3,85")).toBe(385);
+    expect(parseProcent("3.85%")).toBe(385);
+    expect(parseProcent(" 4 ")).toBe(400);
+    expect(parseProcent("0,5")).toBe(50);
+    expect(parseProcent("")).toBeNull();
+    expect(parseProcent("3,855")).toBeNull();
+    expect(parseProcent("abc")).toBeNull();
+    expect(parseProcent("-1")).toBeNull();
   });
 });

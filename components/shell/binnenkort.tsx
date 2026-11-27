@@ -23,7 +23,7 @@ export function Binnenkort({
         <span className="bg-accent-soft text-accent-ink flex size-14 items-center justify-center rounded-2xl">
           <Icon className="size-6" />
         </span>
-        <p className="text-subtle mt-5 text-xs font-medium tracking-wider uppercase">
+        <p className="text-muted mt-5 text-xs font-medium tracking-wider uppercase">
           Wordt gebouwd in {fase}
         </p>
         <h2 className="mt-2 text-lg font-semibold tracking-tight">

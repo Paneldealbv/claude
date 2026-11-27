@@ -58,6 +58,23 @@ begin
   raise exception 'MISLUKT - % (werd NIET geweigerd)', p_label;
 end $$;
 
+-- Als test.faalt, maar de uitgestelde controles lopen pas NA de opdracht,
+-- zoals bij een functie die alles in één transactie doet (bijv.
+-- save_cost_document): SET CONSTRAINTS ALL IMMEDIATE voert de openstaande
+-- controles op dat moment alsnog uit.
+create function test.faalt_bij_afronden(p_sql text, p_label text) returns void
+language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+    set constraints all immediate;
+  exception when others then
+    raise notice 'ok - % (geweigerd: %)', p_label, sqlerrm;
+    return;
+  end;
+  raise exception 'MISLUKT - % (werd NIET geweigerd)', p_label;
+end $$;
+
 -- Voert SQL uit en geeft het aantal geraakte rijen terug.
 create function test.rijen(p_sql text) returns bigint
 language plpgsql as $$
@@ -509,8 +526,28 @@ select test.faalt($$insert into public.payments (project_id, cost_document_id, a
 select test.faalt($$update public.cost_documents set status = 'geboekt',
   reviewed_by = '$$ || :'A' || $$', reviewed_at = now(), booked_at = now()
   where id = '$$ || :'bon' || $$'$$, 'boeken geweigerd als regels ≠ totaal op bon (1 cent verschil)');
+-- Boeken door een ingelogde gebruiker legt de database zelf vast (wie en
+-- wanneer); zonder gebruiker (beheertaak) en zonder bevestiging: geweigerd.
+begin;
+insert into public.cost_documents (project_id, type, document_date, stated_total_incl_cents)
+values (:'pid', 'bon', '2026-11-21', 12100) returning id as bon3 \gset
+insert into public.cost_lines (project_id, cost_document_id, category_id,
+  amount_excl_cents, vat_cents, amount_incl_cents)
+values (:'pid', :'bon3', :'cat_keuken', 10000, 2100, 12100);
+commit;
+reset role;
+select set_config('request.jwt.claims', '{}', false);
 select test.faalt($$update public.cost_documents set status = 'geboekt'
-  where id = '$$ || :'bon' || $$'$$, 'boeken zonder bevestiging door gebruiker geweigerd');
+  where id = '$$ || :'bon3' || $$'$$, 'boeken zonder gebruiker en zonder bevestiging geweigerd');
+select test.als(:'A');
+update public.cost_documents set status = 'geboekt' where id = :'bon3';
+select test.ok((select reviewed_by from public.cost_documents where id = :'bon3') = :'A'::uuid
+           and (select reviewed_at from public.cost_documents where id = :'bon3') is not null
+           and (select booked_at from public.cost_documents where id = :'bon3') is not null,
+  'boeken legt automatisch vast wie (A) en wanneer');
+update public.cost_documents set status = 'concept' where id = :'bon3';
+select test.ok((select booked_at from public.cost_documents where id = :'bon3') is null,
+  'terugzetten naar concept wist het boekmoment');
 
 -- Financiering
 select test.faalt($$update public.funding_sources set amount_cents = 9000000
@@ -536,6 +573,319 @@ select test.faalt($$insert into public.cost_documents (project_id, type, supplie
   'F-001', '2026-11-02')$$, 'dubbel factuurnummer bij dezelfde leverancier geweigerd');
 
 -- =============================================================================
+-- 7b. Documenten in één keer opslaan en verwijderen (0011)
+-- =============================================================================
+select test.als(:'B');
+insert into public.rooms (project_id, name) values (:'pid', 'Hal') returning id as room_hal \gset
+insert into public.contract_installments (project_id, contract_id, sequence, description, percentage_bp)
+values (:'pid', :'con', 1, 'Aanbetaling', 3000) returning id as termijn \gset
+
+select jsonb_build_object('project_id', :'pid', 'type', 'termijnfactuur', 'status', 'geboekt',
+  'supplier_id', :'sup', 'contract_id', :'con', 'installment_id', :'termijn',
+  'document_number', 'F-100', 'document_date', '2026-11-20', 'due_date', '2026-12-04',
+  'stated_total_incl_cents', 460000) as kop \gset
+select jsonb_build_array(
+  jsonb_build_object('description', 'Termijn 1', 'contract_line_id', :'conline',
+    'amount_excl_cents', 371901, 'vat_rate_bp', 2100, 'vat_cents', 78099, 'amount_incl_cents', 450000),
+  jsonb_build_object('description', 'Extra grepen', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 8264, 'vat_rate_bp', 2100, 'vat_cents', 1736, 'amount_incl_cents', 10000,
+    'rooms', jsonb_build_array(:'room_keuken', :'room_woon'))) as regels \gset
+
+select count(*) as docs_voor from public.cost_documents \gset
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"stated_total_incl_cents": 460001}')::text, :'regels'),
+  'opslaan als geboekt geweigerd als regels ≠ totaal op het document');
+select test.ok((select count(*) from public.cost_documents) = :docs_voor,
+  'na een geweigerde opslag staat er niets half in de database');
+
+select public.save_cost_document(:'kop'::jsonb, :'regels'::jsonb) as doc2 \gset
+select test.ok(
+  (select status from public.cost_documents where id = :'doc2') = 'geboekt'
+  and (select reviewed_by from public.cost_documents where id = :'doc2') = :'B'::uuid
+  and (select booked_at from public.cost_documents where id = :'doc2') is not null
+  and (select string_agg(sort_order::text, ',' order by sort_order)
+       from public.cost_lines where cost_document_id = :'doc2') = '1,2'
+  and (select category_id from public.cost_lines
+       where cost_document_id = :'doc2' and sort_order = 1) = :'cat_keuken'::uuid
+  and (select string_agg(a.share_bp::text, ',' order by a.share_bp)
+       from public.room_allocations a join public.cost_lines l on l.id = a.cost_line_id
+       where l.cost_document_id = :'doc2') = '5000,5000',
+  'B slaat een geboekte termijnfactuur met regels en ruimteverdeling in één keer op');
+select booked_at as geboekt_op from public.cost_documents where id = :'doc2' \gset
+
+insert into public.payments (project_id, cost_document_id, amount_cents, paid_on)
+values (:'pid', :'doc2', 300000, '2026-11-25');
+
+-- Correctie van een geboekt én (deels) betaald document, in één keer.
+select (:'kop'::jsonb || jsonb_build_object('id', :'doc2', 'stated_total_incl_cents', 462000)) as kop \gset
+select jsonb_set(:'regels'::jsonb, '{1}', jsonb_build_object('description', 'Extra grepen',
+  'category_id', :'cat_keuken', 'amount_excl_cents', 9917, 'vat_rate_bp', 2100,
+  'vat_cents', 2083, 'amount_incl_cents', 12000,
+  'rooms', jsonb_build_array(:'room_keuken', :'room_woon', :'room_hal'))) as regels \gset
+select public.save_cost_document(:'kop'::jsonb, :'regels'::jsonb) as doc2_opnieuw \gset
+select test.ok(:'doc2_opnieuw' = :'doc2'
+  and (select sum(amount_incl_cents) from public.cost_lines where cost_document_id = :'doc2') = 462000
+  and (select string_agg(a.share_bp::text, ',' order by a.share_bp)
+       from public.room_allocations a join public.cost_lines l on l.id = a.cost_line_id
+       where l.cost_document_id = :'doc2') = '3333,3333,3334'
+  and (select booked_at from public.cost_documents where id = :'doc2') = :'geboekt_op'::timestamptz
+  and (select sum(amount_cents) from public.payments where cost_document_id = :'doc2') = 300000,
+  'geboekt en betaald document in één keer gecorrigeerd (ruimtes 3333/3333/3334, boekmoment blijft)');
+
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"stated_total_incl_cents": 200000}')::text,
+    jsonb_build_array(jsonb_build_object('description', 'te weinig', 'category_id', :'cat_keuken',
+      'amount_excl_cents', 165289, 'vat_rate_bp', 2100, 'vat_cents', 34711,
+      'amount_incl_cents', 200000))::text),
+  'correctie geweigerd als het totaal lager wordt dan wat al betaald is');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb || '{"status": "concept"}')::text, :'regels'),
+  'terugzetten naar concept geweigerd zolang er betalingen zijn');
+select test.ok((select count(*) from public.cost_lines where cost_document_id = :'doc2') = 2
+  and (select sum(amount_incl_cents) from public.cost_lines where cost_document_id = :'doc2') = 462000
+  and (select status from public.cost_documents where id = :'doc2') = 'geboekt',
+  'na geweigerde correcties is het document ongewijzigd');
+
+insert into public.contracts (project_id, supplier_id, title)
+values (:'pid', :'sup', 'Ander contract') returning id as con2 \gset
+insert into public.contract_installments (project_id, contract_id, sequence, description, amount_incl_cents)
+values (:'pid', :'con2', 1, 'Termijn', 100000) returning id as termijn2 \gset
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || jsonb_build_object('installment_id', :'termijn2', 'document_number', 'F-101'))::text,
+    :'regels'),
+  'termijn van een ander contract geweigerd');
+
+select test.als(:'D');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || '{"document_number": "F-102"}')::text, :'regels'),
+  'lezer D kan geen documenten opslaan');
+select test.faalt_bij_afronden(format('select public.delete_cost_document(%L)', :'doc2'),
+  'lezer D kan geen documenten verwijderen');
+select test.als(:'C');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    (:'kop'::jsonb - 'id' || '{"document_number": "F-103"}')::text, :'regels'),
+  'C (geen toegang) kan geen documenten opslaan in het project');
+select test.faalt_bij_afronden(format('select public.save_cost_document(%L::jsonb, %L::jsonb)',
+    :'kop', :'regels'),
+  'C (geen toegang) kan een document van het project niet overschrijven');
+select test.faalt_bij_afronden(format('select public.delete_cost_document(%L)', :'doc2'),
+  'C (geen toegang) kan geen documenten verwijderen');
+select test.anoniem();
+select test.faalt($$select public.save_cost_document('{}'::jsonb, '[]'::jsonb)$$,
+  'niet ingelogd: documenten opslaan geweigerd');
+select test.faalt($$select public.delete_cost_document(gen_random_uuid())$$,
+  'niet ingelogd: documenten verwijderen geweigerd');
+
+select test.als(:'B');
+-- (psql laat een variabele weg als de waarde NULL is: daarom 'geen')
+select coalesce(public.delete_cost_document(:'doc2')::text, 'geen') as verwijderd_bestand \gset
+select test.ok(:'verwijderd_bestand' = 'geen'
+  and not exists (select 1 from public.cost_documents where id = :'doc2')
+  and not exists (select 1 from public.payments where cost_document_id = :'doc2')
+  and not exists (select 1 from public.cost_lines where cost_document_id = :'doc2'),
+  'B verwijdert een betaald document in één keer, met regels en betalingen');
+
+-- =============================================================================
+-- 7c. Financiering opslaan en declaraties bij het bouwdepot (0012)
+-- =============================================================================
+select test.als(:'B');
+select id as overig from public.funding_sources
+where parent_source_id = :'hyp' and type = 'overige_hypotheekruimte' \gset
+
+-- Hypotheek in één keer aanpassen: 420k = bouwdepot 120k + overige 300k.
+select public.save_funding_source(
+  jsonb_build_object('id', :'hyp', 'project_id', :'pid', 'type', 'hypotheek',
+    'name', 'Hypotheek', 'lender', 'Bank', 'amount_cents', 42000000,
+    'interest_rate_bp', 385, 'start_date', '2026-06-01', 'end_date', '2056-06-01'),
+  jsonb_build_array(
+    jsonb_build_object('type', 'bouwdepot', 'name', 'Bouwdepot',
+      'amount_cents', 12000000, 'end_date', '2028-06-01'),
+    jsonb_build_object('type', 'overige_hypotheekruimte', 'name', 'Overige ruimte',
+      'amount_cents', 30000000))) as hyp2 \gset
+select test.ok(:'hyp2' = :'hyp'
+  and (select amount_cents from public.funding_sources where id = :'depot') = 12000000
+  and (select end_date from public.funding_sources where id = :'depot') = '2028-06-01'
+  and (select amount_cents from public.funding_sources where id = :'overig') = 30000000
+  and (select interest_rate_bp from public.funding_sources where id = :'hyp') = 385
+  and (select count(*) from public.funding_sources where parent_source_id = :'hyp') = 2,
+  'B past hypotheek en delen in één keer aan; de delen blijven dezelfde rijen');
+
+select test.faalt_bij_afronden(format('select public.save_funding_source(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('id', :'hyp', 'project_id', :'pid', 'type', 'hypotheek',
+      'name', 'Hypotheek', 'amount_cents', 42000000)::text,
+    jsonb_build_array(
+      jsonb_build_object('type', 'bouwdepot', 'name', 'Bouwdepot', 'amount_cents', 12000000),
+      jsonb_build_object('type', 'overige_hypotheekruimte', 'name', 'Overig', 'amount_cents', 1))::text),
+  'delen die niet optellen tot het hypotheekbedrag geweigerd');
+select test.faalt_bij_afronden(format('select public.save_funding_source(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('id', :'hyp', 'project_id', :'pid', 'type', 'hypotheek',
+      'name', 'Hypotheek', 'amount_cents', 42000000)::text, '[]'),
+  'bouwdepot met betalingen kan niet zomaar uit de hypotheek');
+select test.faalt_bij_afronden(format('select public.save_funding_source(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'type', 'eigen_geld', 'name', 'Spaargeld',
+      'amount_cents', 100)::text,
+    jsonb_build_array(jsonb_build_object('type', 'bouwdepot', 'name', 'x',
+      'amount_cents', 100))::text),
+  'alleen een hypotheek kan in delen worden verdeeld');
+select test.faalt_bij_afronden(format('select public.save_funding_source(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('id', :'eigen', 'project_id', :'pid', 'type', 'lening',
+      'name', 'Eigen geld', 'amount_cents', 9500000)::text, '[]'),
+  'het soort bron kan niet worden gewijzigd');
+select test.ok((select amount_cents from public.funding_sources where id = :'depot') = 12000000
+  and (select count(*) from public.funding_sources where parent_source_id = :'hyp') = 2,
+  'na geweigerde wijzigingen is de hypotheek ongewijzigd');
+
+select public.save_funding_source(
+  jsonb_build_object('project_id', :'pid', 'type', 'schenking',
+    'name', 'Schenking ouders', 'amount_cents', 2500000), '[]'::jsonb) as schenking \gset
+select test.ok((select type from public.funding_sources where id = :'schenking') = 'schenking'
+  and (select parent_source_id from public.funding_sources where id = :'schenking') is null,
+  'B legt een schenking vast (hoofdbron zonder delen)');
+
+-- Geboekte facturen voor de declaraties: 10.000 (open), 2.000 en 3.000
+-- (allebei al zelf betaald uit eigen geld) en 110.000.
+select public.save_cost_document(jsonb_build_object('project_id', :'pid', 'type', 'factuur',
+    'status', 'geboekt', 'supplier_id', :'sup', 'document_number', 'D-A',
+    'document_date', '2026-11-10'),
+  jsonb_build_array(jsonb_build_object('description', 'Ruwbouw', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 826446, 'vat_rate_bp', 2100, 'vat_cents', 173554,
+    'amount_incl_cents', 1000000))) as fa \gset
+select public.save_cost_document(jsonb_build_object('project_id', :'pid', 'type', 'factuur',
+    'status', 'geboekt', 'supplier_id', :'sup', 'document_number', 'D-B',
+    'document_date', '2026-11-11'),
+  jsonb_build_array(jsonb_build_object('description', 'Tegels', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 165289, 'vat_rate_bp', 2100, 'vat_cents', 34711,
+    'amount_incl_cents', 200000))) as fb \gset
+select public.save_cost_document(jsonb_build_object('project_id', :'pid', 'type', 'factuur',
+    'status', 'geboekt', 'supplier_id', :'sup', 'document_number', 'D-C',
+    'document_date', '2026-11-12'),
+  jsonb_build_array(jsonb_build_object('description', 'Kranen', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 247934, 'vat_rate_bp', 2100, 'vat_cents', 52066,
+    'amount_incl_cents', 300000))) as fc \gset
+select public.save_cost_document(jsonb_build_object('project_id', :'pid', 'type', 'factuur',
+    'status', 'geboekt', 'supplier_id', :'sup', 'document_number', 'D-D',
+    'document_date', '2026-11-13'),
+  jsonb_build_array(jsonb_build_object('description', 'Casco', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 9090909, 'vat_rate_bp', 2100, 'vat_cents', 1909091,
+    'amount_incl_cents', 11000000))) as fd \gset
+select public.save_cost_document(jsonb_build_object('project_id', :'pid', 'type', 'bon',
+    'status', 'concept', 'document_date', '2026-11-14'),
+  jsonb_build_array(jsonb_build_object('description', 'Schroeven', 'category_id', :'cat_keuken',
+    'amount_excl_cents', 8264, 'vat_rate_bp', 2100, 'vat_cents', 1736,
+    'amount_incl_cents', 10000))) as fconcept \gset
+insert into public.payments (project_id, cost_document_id, funding_source_id, amount_cents, paid_on)
+values (:'pid', :'fb', :'eigen', 200000, '2026-11-15'),
+       (:'pid', :'fc', :'eigen', 300000, '2026-11-16');
+
+select public.save_depot_claim(
+  jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot',
+    'claim_number', 'BD-1', 'status', 'ingediend', 'submitted_on', '2026-11-20'),
+  jsonb_build_array(
+    jsonb_build_object('cost_document_id', :'fa', 'amount_cents', 1000000),
+    jsonb_build_object('cost_document_id', :'fb', 'amount_cents', 200000),
+    jsonb_build_object('cost_document_id', :'fc', 'amount_cents', 100000))) as claim \gset
+select test.ok((select amount_cents from public.depot_claims where id = :'claim') = 1300000
+  and (select status from public.depot_claims where id = :'claim') = 'ingediend'
+  and (select submitted_on from public.depot_claims where id = :'claim') = '2026-11-20'
+  and (select count(*) from public.depot_claim_lines where depot_claim_id = :'claim') = 3,
+  'B dient een declaratie in met drie facturen (13.000)');
+
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fa', 'amount_cents', 1))::text),
+  'meer declareren dan het bedrag van de factuur geweigerd');
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'eigen')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fd', 'amount_cents', 1))::text),
+  'declaratie bij eigen geld (geen bouwdepot) geweigerd');
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fconcept', 'amount_cents', 10000))::text),
+  'niet-geboekt document in een declaratie geweigerd');
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fd', 'amount_cents', 11000000))::text),
+  'declaraties samen hoger dan het bouwdepot geweigerd');
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot')::text, '[]'),
+  'declaratie zonder facturen geweigerd');
+select test.ok((select count(*) from public.depot_claims where project_id = :'pid') = 1,
+  'na geweigerde declaraties staat er niets half in de database');
+
+select test.als(:'D');
+select test.faalt_bij_afronden(format('select public.pay_out_depot_claim(%L, %L)',
+    :'claim', '2026-11-30'), 'lezer D kan geen declaratie uitbetalen');
+select test.faalt_bij_afronden(format('select public.save_funding_source(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'type', 'overig', 'name', 'x',
+      'amount_cents', 1)::text, '[]'),
+  'lezer D kan geen financiering vastleggen');
+select test.als(:'C');
+select test.faalt_bij_afronden(format('select public.pay_out_depot_claim(%L, %L)',
+    :'claim', '2026-11-30'), 'C (geen toegang) kan geen declaratie uitbetalen');
+select test.faalt_bij_afronden(format('select public.set_depot_claim_status(%L, %L, null)',
+    :'claim', 'afgewezen'), 'C (geen toegang) kan geen declaratie afwijzen');
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fd', 'amount_cents', 100))::text),
+  'C (geen toegang) kan geen declaratie indienen');
+select test.anoniem();
+select test.faalt($$select public.pay_out_depot_claim(gen_random_uuid(), current_date)$$,
+  'niet ingelogd: uitbetalen geweigerd');
+select test.faalt($$select public.save_funding_source('{}'::jsonb, '[]'::jsonb)$$,
+  'niet ingelogd: financiering opslaan geweigerd');
+
+-- Uitbetalen: open bedrag uit het depot, voorgeschoten bedragen naar het depot.
+select test.als(:'B');
+select public.pay_out_depot_claim(:'claim', '2026-11-30');
+select test.ok(
+  (select status from public.depot_claims where id = :'claim') = 'uitbetaald'
+  and (select paid_out_on from public.depot_claims where id = :'claim') = '2026-11-30'
+  and (select string_agg(funding_source_id || ':' || amount_cents || ':' || paid_on, ',')
+       from public.payments where cost_document_id = :'fa')
+      = :'depot' || ':1000000:2026-11-30'
+  and (select string_agg(funding_source_id || ':' || amount_cents || ':' || paid_on, ',')
+       from public.payments where cost_document_id = :'fb')
+      = :'depot' || ':200000:2026-11-15'
+  and (select string_agg(funding_source_id || ':' || amount_cents || ':' || paid_on, ','
+                         order by amount_cents)
+       from public.payments where cost_document_id = :'fc')
+      = :'depot' || ':100000:2026-11-16,' || :'eigen' || ':200000:2026-11-16'
+  and (select count(*) from public.payments where depot_claim_id = :'claim') = 3,
+  'uitbetaald: 10.000 uit het depot; voorgeschoten 2.000 en 1.000 (gesplitst) naar het depot');
+
+select test.faalt_bij_afronden(format('select public.save_depot_claim(%L::jsonb, %L::jsonb)',
+    jsonb_build_object('id', :'claim', 'project_id', :'pid', 'funding_source_id', :'depot')::text,
+    jsonb_build_array(jsonb_build_object('cost_document_id', :'fa', 'amount_cents', 500000))::text),
+  'uitbetaalde declaratie kan niet meer worden gewijzigd');
+select test.faalt_bij_afronden(format('select public.pay_out_depot_claim(%L, %L)',
+    :'claim', '2026-12-01'), 'een uitbetaalde declaratie niet nog eens uitbetalen');
+
+-- Status: concept → ingediend → afgewezen; daarna telt hij niet meer mee.
+select public.save_depot_claim(
+  jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot', 'claim_number', 'BD-2'),
+  jsonb_build_array(jsonb_build_object('cost_document_id', :'fc', 'amount_cents', 200000))) as claim2 \gset
+select public.set_depot_claim_status(:'claim2', 'ingediend', '2026-12-02');
+select test.ok((select status from public.depot_claims where id = :'claim2') = 'ingediend'
+  and (select submitted_on from public.depot_claims where id = :'claim2') = '2026-12-02',
+  'concept-declaratie ingediend op 02-12-2026');
+select public.set_depot_claim_status(:'claim2', 'afgewezen', null);
+select public.save_depot_claim(
+  jsonb_build_object('project_id', :'pid', 'funding_source_id', :'depot', 'claim_number', 'BD-3'),
+  jsonb_build_array(jsonb_build_object('cost_document_id', :'fc', 'amount_cents', 200000))) as claim3 \gset
+select test.ok((select status from public.depot_claims where id = :'claim2') = 'afgewezen'
+  and (select count(*) from public.depot_claims where project_id = :'pid') = 3,
+  'na afwijzen kan dezelfde factuur opnieuw worden gedeclareerd');
+select test.faalt_bij_afronden(format('select public.set_depot_claim_status(%L, %L, null)',
+    :'claim2', 'concept'),
+  'heropenen geweigerd als de factuur dan vaker wordt gedeclareerd dan het bedrag');
+select test.rijen($$delete from public.depot_claims where id = '$$ || :'claim3' || $$'$$)
+  as claim3_weg \gset
+select test.ok(:claim3_weg = 1
+  and not exists (select 1 from public.depot_claim_lines where depot_claim_id = :'claim3'),
+  'B verwijdert een declaratie met zijn regels');
+reset role;
+
+-- =============================================================================
 -- 8. Opruimen: een eigenaar kan het eigen project verwijderen
 -- =============================================================================
 select test.als(:'C');
@@ -557,6 +907,8 @@ select test.ok(
   (select count(*) from public.cost_lines) = 0
   and (select count(*) from public.payments) = 0
   and (select count(*) from public.funding_sources) = 0
+  and (select count(*) from public.depot_claims) = 0
+  and (select count(*) from public.depot_claim_lines) = 0
   and (select count(*) from public.project_members) = 0
   and (select count(*) from public.categories) = 0,
   'na verwijderen blijven geen gegevens achter');

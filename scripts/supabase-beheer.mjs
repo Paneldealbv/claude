@@ -9,6 +9,7 @@
  *   node scripts/supabase-beheer.mjs auth --droog     toon de Auth-instellingen
  *   node scripts/supabase-beheer.mjs auth             stel Auth in (NL e-mails, URL's)
  *   node scripts/supabase-beheer.mjs env-local        schrijf .env.local (alleen publieke waarden)
+ *   node scripts/supabase-beheer.mjs types            TypeScript-types van de database genereren
  *
  * Instellingen (environment variables, nooit in de code):
  *   SUPABASE_PROJECT_REF    bijv. jqebvrnhnesgfsewhqpl
@@ -317,7 +318,24 @@ async function livetest() {
   }
 }
 
+async function types() {
+  await project();
+  const { types: inhoud } = await api(
+    `/projects/${REF}/types/typescript?included_schemas=public`,
+  );
+  if (!inhoud?.includes("export type Database")) stop("Geen types ontvangen.");
+  const doel = path.join(ROOT, "lib", "supabase", "database.types.ts");
+  await writeFile(
+    doel,
+    "// Gegenereerd uit de database — niet handmatig wijzigen.\n" +
+      "// Opnieuw maken na een migratie: npm run supabase -- types\n\n" +
+      inhoud,
+  );
+  console.log(`✓ ${path.relative(ROOT, doel)} bijgewerkt.`);
+}
+
 const opdrachten = {
+  types,
   livetest,
   controle: async () => {
     await project();

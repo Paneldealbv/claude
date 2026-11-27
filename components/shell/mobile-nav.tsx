@@ -18,7 +18,7 @@ export function MobileHeader() {
 
   return (
     <>
-      <header className="border-border bg-background/85 sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-md lg:hidden">
+      <header className="border-border bg-background/85 sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-md lg:hidden print:hidden">
         <button
           type="button"
           onClick={() => lade.current?.showModal()}
@@ -57,6 +57,7 @@ export function MobileHeader() {
 
 function Tab({ item, pathname }: { item: NavItem; pathname: string }) {
   const actief = isActive(pathname, item.href);
+  const badge = useShell().badges[item.href] ?? item.badge;
   return (
     <Link
       href={item.href}
@@ -68,9 +69,9 @@ function Tab({ item, pathname }: { item: NavItem; pathname: string }) {
     >
       <span className="relative">
         <item.icon className="size-[22px]" strokeWidth={actief ? 2.25 : 1.75} />
-        {item.badge ? (
+        {badge ? (
           <span className="bg-gold text-gold-foreground absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold">
-            {item.badge}
+            {badge}
           </span>
         ) : null}
       </span>
@@ -87,7 +88,7 @@ export function MobileTabbar() {
   return (
     <nav
       aria-label="Snelmenu"
-      className="border-border bg-surface/95 safe-bottom fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-md lg:hidden"
+      className="border-border bg-surface/95 safe-bottom fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-md lg:hidden print:hidden"
     >
       <div className="mx-auto flex max-w-md items-end px-2">
         <Tab item={een} pathname={pathname} />

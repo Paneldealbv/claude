@@ -1,11 +1,63 @@
 "use client";
 
-import { CircleCheck, Loader2, TriangleExclamationPoint } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import {
+  CircleCheck,
+  Info,
+  Loader2,
+  TriangleExclamationPoint,
+} from "lucide-react";
+import {
+  createContext,
+  startTransition,
+  useActionState,
+  useContext,
+  useId,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
+import type { ActieStatus } from "@/lib/acties/project";
 import { knopKlassen, type KnopVariant } from "./knop";
 
+const BezigContext = createContext(false);
+
+/**
+ * Formulier dat de invoer laat staan na versturen. Een gewone
+ * <form action={…}> wordt door React na elke verzending leeggemaakt, ook als
+ * de server een foutmelding teruggeeft. Bij lange formulieren (regels,
+ * uploads, keuzelijsten) is dat vervelend en kunnen keuzelijsten uit de pas
+ * gaan lopen met wat er werkelijk wordt verstuurd. Werkt samen met
+ * useActionState: geef de actie en de "bezig"-waarde door.
+ */
+export function BlijvendFormulier({
+  actie,
+  bezig,
+  children,
+  ...rest
+}: {
+  actie: (formData: FormData) => void;
+  bezig: boolean;
+  children: ReactNode;
+} & Omit<ComponentProps<"form">, "action" | "onSubmit" | "children">) {
+  return (
+    <BezigContext value={bezig}>
+      <form
+        {...rest}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (bezig) return;
+          const verzender = (e.nativeEvent as SubmitEvent).submitter;
+          const formData = new FormData(e.currentTarget, verzender);
+          startTransition(() => actie(formData));
+        }}
+      >
+        {children}
+      </form>
+    </BezigContext>
+  );
+}
 
 export function Veld({
   label,
@@ -20,15 +72,18 @@ export function Veld({
   fout?: string;
   hint?: ReactNode;
 } & Omit<ComponentProps<"input">, "name" | "id">) {
-  const foutId = fout ? `${naam}-fout` : undefined;
-  const hintId = hint ? `${naam}-hint` : undefined;
+  // Uniek id per veld: meerdere formulieren op één pagina kunnen dezelfde
+  // veldnaam hebben (bijv. "naam"), maar een label moet bij zijn eigen veld horen.
+  const id = useId();
+  const foutId = fout ? `${id}-fout` : undefined;
+  const hintId = hint ? `${id}-hint` : undefined;
   return (
     <div className={cn("space-y-1.5", className)}>
-      <label htmlFor={naam} className="block text-sm font-medium">
+      <label htmlFor={id} className="block text-sm font-medium">
         {label}
       </label>
       <input
-        id={naam}
+        id={id}
         name={naam}
         aria-invalid={fout ? true : undefined}
         aria-describedby={
@@ -62,20 +117,23 @@ export function VerzendKnop({
   bezigTekst,
   variant = "primair",
   className,
+  disabled,
   ...rest
 }: {
   children: ReactNode;
   bezigTekst?: string;
   variant?: KnopVariant;
 } & ComponentProps<"button">) {
-  const { pending } = useFormStatus();
+  const formStatus = useFormStatus();
+  const bezig = useContext(BezigContext);
+  const pending = formStatus.pending || bezig;
   return (
     <button
       type="submit"
-      disabled={pending || rest.disabled}
+      {...rest}
+      disabled={pending || disabled}
       aria-busy={pending || undefined}
       className={knopKlassen(variant, className)}
-      {...rest}
     >
       {pending && <Loader2 className="size-4 animate-spin" />}
       {pending && bezigTekst ? bezigTekst : children}
@@ -83,26 +141,60 @@ export function VerzendKnop({
   );
 }
 
+const MELDING = {
+  fout: {
+    Icon: TriangleExclamationPoint,
+    klassen: "bg-critical-soft text-critical",
+  },
+  succes: { Icon: CircleCheck, klassen: "bg-positive-soft text-positive" },
+  "let-op": {
+    Icon: TriangleExclamationPoint,
+    klassen: "bg-warning-soft text-warning",
+  },
+  info: { Icon: Info, klassen: "bg-info-soft text-info" },
+} as const;
+
 export function Melding({
   soort,
   children,
 }: {
-  soort: "fout" | "succes";
+  soort: keyof typeof MELDING;
   children: ReactNode;
 }) {
-  const Icon = soort === "fout" ? TriangleExclamationPoint : CircleCheck;
+  const { Icon, klassen } = MELDING[soort];
   return (
     <div
       role={soort === "fout" ? "alert" : "status"}
       className={cn(
         "flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-sm",
-        soort === "fout"
-          ? "bg-critical-soft text-critical"
-          : "bg-positive-soft text-positive",
+        klassen,
       )}
     >
       <Icon className="mt-0.5 size-4 shrink-0" />
       <div className="leading-relaxed">{children}</div>
     </div>
   );
+}
+
+const leeg: ActieStatus = {};
+type Actie = (vorige: ActieStatus, formData: FormData) => Promise<ActieStatus>;
+
+/**
+ * Actie met een "versie" die ophoogt na succes: geef die als key aan het
+ * formulier, dan begint het daarna weer leeg.
+ */
+export function useActieMetVersie(actie: Actie, naSucces?: () => void) {
+  const [versie, setVersie] = useState(0);
+  const [status, dispatch, bezig] = useActionState(
+    async (vorige: ActieStatus, fd: FormData) => {
+      const uit = await actie(vorige, fd);
+      if (uit.succes) {
+        setVersie((v) => v + 1);
+        naSucces?.();
+      }
+      return uit;
+    },
+    leeg,
+  );
+  return { status, dispatch, bezig, versie };
 }

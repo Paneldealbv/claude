@@ -10,6 +10,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import {
   createContext,
   useCallback,
@@ -33,31 +34,36 @@ const opties: {
   icon: LucideIcon;
   titel: string;
   tekst: string;
-  fase: string;
+  /** Werkt al: link naar het invoerscherm. */
+  href?: string;
+  fase?: string;
 }[] = [
   {
     icon: Camera,
     titel: "Bon fotograferen",
-    tekst: "Maak een foto met je telefoon. De AI leest de regels uit.",
-    fase: "fase 6 en 8",
+    tekst:
+      "Maak een foto; de AI leest de bon uit en jij controleert het voorstel.",
+    href: "/te-controleren/nieuw?bron=camera",
   },
   {
     icon: Upload,
     titel: "Factuur uploaden",
-    tekst: "PDF of afbeelding van een (termijn)factuur of creditnota.",
-    fase: "fase 6",
+    tekst:
+      "PDF of foto van een factuur, termijnfactuur of creditnota; de AI doet een voorstel.",
+    href: "/te-controleren/nieuw",
   },
   {
     icon: FileText,
-    titel: "Offerte uploaden",
-    tekst: "Bewaar de offerte en zet hem later om in een contract.",
-    fase: "fase 5",
+    titel: "Offerte toevoegen",
+    tekst:
+      "Bewaar de offerte (PDF of foto) en zet hem later om in een contract.",
+    href: "/offertes/nieuw",
   },
   {
     icon: PencilLine,
     titel: "Handmatig invoeren",
-    tekst: "Zonder document, bijvoorbeeld een contante betaling.",
-    fase: "fase 6",
+    tekst: "Zelf alle gegevens invullen, met of zonder document.",
+    href: "/documenten/nieuw",
   },
 ];
 
@@ -101,14 +107,9 @@ export function AddDocumentProvider({ children }: { children: ReactNode }) {
         </div>
 
         <ul className="grid gap-2 p-4 sm:grid-cols-2 sm:p-6">
-          {opties.map((o) => (
-            <li key={o.titel}>
-              <button
-                type="button"
-                disabled
-                aria-describedby="toevoegen-demo"
-                className="border-border bg-surface flex h-full w-full cursor-not-allowed items-start gap-3 rounded-xl border p-3.5 text-left sm:flex-col sm:p-4"
-              >
+          {opties.map((o) => {
+            const inhoud = (
+              <>
                 <span className="bg-accent-soft text-accent-ink flex size-9 shrink-0 items-center justify-center rounded-lg">
                   <o.icon className="size-[18px]" />
                 </span>
@@ -117,13 +118,42 @@ export function AddDocumentProvider({ children }: { children: ReactNode }) {
                   <span className="text-muted mt-0.5 block text-xs leading-relaxed">
                     {o.tekst}
                   </span>
-                  <span className="text-subtle mt-1.5 block text-[11px] font-medium tracking-wide uppercase">
-                    Beschikbaar in {o.fase}
-                  </span>
+                  {o.fase && (
+                    <span className="text-muted mt-1.5 block text-[11px] font-medium tracking-wide uppercase">
+                      Beschikbaar in {o.fase}
+                    </span>
+                  )}
                 </span>
-              </button>
-            </li>
-          ))}
+              </>
+            );
+            const klassen =
+              "border-border bg-surface flex h-full w-full items-start gap-3 rounded-xl border p-3.5 text-left sm:flex-col sm:p-4";
+            return (
+              <li key={o.titel}>
+                {o.href ? (
+                  <Link
+                    href={o.href}
+                    onClick={close}
+                    className={cn(
+                      klassen,
+                      "hover:border-accent hover:bg-accent-soft/40 transition-colors",
+                    )}
+                  >
+                    {inhoud}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    aria-describedby="toevoegen-demo"
+                    className={cn(klassen, "cursor-not-allowed")}
+                  >
+                    {inhoud}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
 
         <div
@@ -131,9 +161,8 @@ export function AddDocumentProvider({ children }: { children: ReactNode }) {
           className="border-border bg-surface-2 text-muted flex items-start gap-2 rounded-b-2xl border-t px-6 py-4 text-xs leading-relaxed"
         >
           <Sparkles className="text-accent-ink mt-px size-4 shrink-0" />
-          Dit is de ontwerp-shell. Uploaden en AI-herkenning worden in latere
-          fasen gekoppeld. Een AI-voorstel wordt altijd eerst door jou
-          gecontroleerd voordat het meetelt.
+          De AI leest facturen en bonnen uit en doet een voorstel. Dat wordt
+          altijd eerst door jou gecontroleerd voordat het meetelt.
         </div>
       </dialog>
     </AddDocumentContext.Provider>

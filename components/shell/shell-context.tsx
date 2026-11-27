@@ -13,6 +13,8 @@ export type ShellData = {
   projecten: { id: string; naam: string }[];
   gebruiker: { naam: string; email: string; initialen: string };
   leden: { naam: string; initialen: string; rol: string }[];
+  /** Aantallen bij een menu-item, per href (bijv. nog niet geboekt). */
+  badges: Record<string, number>;
 };
 
 const ShellContext = createContext<ShellData | null>(null);

@@ -10,6 +10,7 @@ import {
   getGebruiker,
   getProjecten,
 } from "@/lib/auth";
+import { isGeldigeIsoDatum } from "@/lib/datum";
 import { siteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import { dbFout } from "./fouten";
@@ -29,9 +30,10 @@ export type ActieStatus = {
 };
 
 const ROLLEN = ["eigenaar", "bewerker", "lezer"] as const;
-const datum = z
-  .string()
-  .regex(/^(\d{4}-\d{2}-\d{2})?$/, { error: "Kies een geldige datum." });
+// Leeg, of een bestaande datum in ISO (het datumveld stuurt JJJJ-MM-DD).
+const datum = z.string().refine((w) => w === "" || isGeldigeIsoDatum(w), {
+  error: "Vul een geldige datum in als DD-MM-JJJJ.",
+});
 
 async function kiesProject(projectId: string) {
   (await cookies()).set(ACTIEF_PROJECT_COOKIE, projectId, {
@@ -82,8 +84,9 @@ export async function projectAanmaken(
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_project", {
     p_name: invoer.data.naam,
-    p_address: invoer.data.adres || null,
-    p_expected_completion: invoer.data.oplevering || null,
+    // Lege velden weglaten: de databasefunctie gebruikt dan null.
+    p_address: invoer.data.adres || undefined,
+    p_expected_completion: invoer.data.oplevering || undefined,
   });
   if (error || !data) return { fout: dbFout(error), waarden };
 

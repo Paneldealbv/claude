@@ -1,7 +1,6 @@
 # Nieuwbouw Dashboard — Technische architectuur
 
-Versie 3 · 26-11-2026 · verwerkt de beslissingen van de opdrachtgever na fase 0
-(afsluitcontrole, bouwdepot als deel van de hypotheek, AI-controles).
+Versie 7 · 26-11-2026 · fase 7: dashboard en rapportages (§ 3.14).
 
 Dit document is de leidraad voor de bouw. Wijzigingen in het datamodel of de
 rekenregels worden eerst hier vastgelegd en daarna pas gebouwd.
@@ -258,7 +257,225 @@ eigen categorie, ruimte(s) en BTW-tarief. Het bestand staat één keer in de ops
 Alle regels uit dit hoofdstuk staan als pure TypeScript-functies in `lib/finance/`.
 Ze krijgen de rijen uit de database binnen en geven de totalen terug. Dashboard,
 budgetpagina, rapportages en exports gebruiken allemaal dezelfde functies. Ieder
-voorbeeld uit dit document wordt een unit test.
+voorbeeld uit dit document is een unit test.
+
+| Bestand           | Inhoud                                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `verdeel.ts`      | Verdelen naar rato met de grootste-restmethode (exact tot op de cent)                                     |
+| `bereken.ts`      | `berekenProject()`: contracten, categorieën, projecttotalen, financiering, ruimtes, termijnen, documenten |
+| `afsluiten.ts`    | `controleerAfsluiten()`: controlelijst vóór het afsluiten van een categorie                               |
+| `wat-als.ts`      | `metExtraContract()`: de prognose alsof een offerte al is geaccepteerd (voorbeeld vóór het besluit)       |
+| `uit-database.ts` | Databaserijen → invoer van de rekenlogica                                                                 |
+| `*.test.ts`       | Voorbeelden uit dit document, plus invarianten op 300 willekeurige projecten                              |
+
+### 3.10 Uitwerking in code (vastgelegd in fase 3)
+
+Keuzes die bij het programmeren concreet zijn gemaakt:
+
+- **Alle bedragen inclusief BTW.** Betalingen zijn altijd incl. BTW, dus de
+  rekenlogica rekent consequent incl. BTW (keuze van de opdrachtgever).
+- **Kostenregel op een heel contract met een categorie** (bijv. een
+  termijnfactuur voor alleen het keukendeel): naar rato over de contractregels
+  in díe categorie; heeft het contract daar geen regels, dan over alle regels.
+- **Kosten op een contract zonder contractregels** tellen als losse kosten in
+  hun categorie, met een melding.
+- **Geannuleerd contract:** geen toezegging (gecontracteerd = 0); wat al
+  gefactureerd is telt mee. **Afgerond contract:** prognose = gefactureerd.
+- **Betalingen** worden naar rato van de bedragen over de regels van het
+  document verdeeld; daarmee is "betaald" per categorie, contractregel en
+  ruimte bekend. Bij een document met plus- en minregels blijft dit exact.
+- **Afgesloten hoofdcategorie** sluit ook alle subcategorieën.
+- **Ruimterapport:** gecontracteerd, gefactureerd, betaald en vastgelegd per
+  ruimte. Een kostenregel zonder eigen ruimteverdeling neemt die van zijn
+  contractregel over. "Niet toegewezen" vult aan tot 100%, zodat de som van
+  alle ruimtes gelijk is aan het projecttotaal.
+- **Termijnschema:** termijnbedragen bij percentages worden met de
+  grootste-restmethode berekend, zodat ze exact optellen tot het contract.
+- **Betaalstatus** per geboekt document: open, deels, betaald of te laat
+  (vervaldatum voorbij en nog niet betaald).
+- **Meldingen** (geen fout, wel aandacht): kosten zonder categorie, kosten op
+  een contract zonder regels, hypotheekdelen die niet optellen, kosten in een
+  categorie zonder budget, meer betaald dan het documenttotaal.
+- **Datums** worden overal ingevoerd als DD-MM-JJJJ (`components/ui/datum-veld.tsx`),
+  ongeacht de taal van de browser, en als ISO (JJJJ-MM-DD) opgeslagen.
+
+### 3.11 Offertes en contracten (vastgelegd in fase 5)
+
+- **Een offerte telt nooit mee.** Pas bij **accepteren** ontstaat een contract
+  (status actief) met precies dezelfde regels; de offerte krijgt de status
+  "geaccepteerd" en is daarna niet meer te wijzigen. Eén offerte wordt hooguit
+  één contract (unieke index op `contracts.quote_id`), dus dubbel accepteren
+  kan niet.
+- **Accepteren vraagt een categorie op elke regel**: een contract telt mee in
+  het budget per categorie. Vóór het besluit toont de offertepagina het
+  **effect op de prognose** per categorie en voor het hele project
+  (`metExtraContract()` + `berekenProject()`). Valt een offerte binnen het
+  budget van een open categorie, dan blijft de prognose gelijk aan het budget
+  (§ 3.4).
+- **Vergelijken** gebeurt per categorie: per offerte de som van haar regels in
+  die categorie, goedkoopste eerst, met het verschil ten opzichte van het
+  budget. Afgewezen en verlopen offertes doen niet mee.
+- **Contract zonder offerte** (bijv. een mondelinge afspraak) kan ook; elke
+  regel heeft dan meteen een categorie.
+- **Meer- en minderwerk** hoort bij een contractregel. Een voorstel telt niet
+  mee; na **akkoord** telt het mee in C(l) (§ 3.3), afgewezen telt niet. Wie en
+  wanneer besliste, wordt vastgelegd. Goedgekeurd werk kan niet zomaar worden
+  verwijderd: eerst terug naar "voorstel", zodat een toezegging nooit
+  ongemerkt uit de prognose verdwijnt.
+- **Termijnschema**: per termijn een percentage van het contract (inclusief
+  goedgekeurd meer-/minderwerk) of een vast bedrag. Percentages samen hooguit
+  100%. Termijnen verdelen het contractbedrag en tellen dus nooit extra mee;
+  termijnfacturen (fase 6) worden eraan gekoppeld.
+- **Status**: actief (prognose minimaal het contractbedrag), afgerond
+  (prognose = gefactureerd; de app waarschuwt als er nog iets te factureren
+  staat) of geannuleerd (alleen wat al gefactureerd is telt; vraagt om
+  bevestiging). Elke statuswijziging en elke geaccepteerde offerte staat in het
+  activiteitenlog.
+- **Contract verwijderen** kan alleen zolang er geen facturen of bonnen aan
+  hangen (anders: annuleren). Een gekoppelde offerte gaat dan terug naar
+  "ontvangen".
+- **Ruimtes per contractregel**: gelijk verdeeld over de gekozen ruimtes
+  (grootste-restmethode in basispunten, samen precies 100%, gecontroleerd door
+  de database).
+
+### 3.12 Bestanden (vastgelegd in fase 5)
+
+- Uploaden gaat **rechtstreeks van de browser naar de privé opslag**, met een
+  eenmalige uploadlink die de server alleen aan projectleden geeft. Zo geldt
+  de limiet van 4,5 MB per verzoek bij Vercel niet; de grens is 20 MB.
+- Toegestaan: PDF, JPG, PNG, WebP en HEIC. De server controleert na het
+  uploaden grootte en type van het opgeslagen bestand en registreert het pas
+  daarna in `files`.
+- **Elk origineel één keer**: de browser berekent een SHA-256; staat hetzelfde
+  bestand al in het project, dan wordt het bestaande gebruikt. Een bestand
+  wordt pas verwijderd als niets er meer naar verwijst.
+- Bekijken gaat via een **tijdelijke link (1 uur)** die per paginabezoek wordt
+  gemaakt; alleen projectleden krijgen die. Bestanden staan per project in een
+  eigen map (`<project-id>/…`), afgeschermd door de opslagregels.
+- Nog te doen (fase 10): bestanden opruimen van projecten die worden
+  verwijderd (bijv. als het laatste lid zijn account opheft).
+
+### 3.13 Facturen, bonnen en betalingen (vastgelegd in fase 6)
+
+- **Soorten**: factuur, termijnfactuur, eindfactuur, creditnota en bon. Elk
+  document heeft regels; elke regel hoort bij een **contractregel**, een
+  **heel contract** (naar rato over de contractregels) of is een **losse
+  kostenpost in een categorie**. Zo telt een factuur altijd binnen het contract
+  en nooit erbovenop (§ 3.3): een offerte van € 15.000 met drie termijnfacturen
+  van € 5.000 blijft € 15.000.
+- **Eén bon, meerdere regels**: een bon wordt over categorieën verdeeld; het
+  originele bestand wordt één keer bewaard. Per regel kunnen ruimtes worden
+  gekozen (gelijk verdeeld); zonder keuze gelden bij een contractregel de
+  ruimtes van het contract.
+- **Concept, te controleren, geboekt, vervallen**: alleen geboekte documenten
+  tellen mee. Boeken kan alleen als er regels zijn en, als het totaal op het
+  document is ingevuld, de regels daar precies op uitkomen (app én database).
+  De database legt vast wie boekte en wanneer. "Te controleren" toont alles wat
+  nog niet geboekt is (vanaf fase 8 ook AI-voorstellen).
+- **Opslaan in één keer** via `save_cost_document` (§ 4): document, regels en
+  ruimteverdeling, of niets. Daardoor kan ook een geboekt en (deels) betaald
+  document worden gecorrigeerd, zolang het daarna klopt.
+- **Termijn- en eindfactuur** worden het makkelijkst ingevoerd vanaf het
+  contract: soort, contract, termijn en het nog te factureren bedrag staan dan
+  al ingevuld. Zonder gekozen leverancier geldt die van het contract.
+- **Creditnota**: bedragen worden ingevuld zoals op het papier en negatief
+  opgeslagen; een terugbetaling is ook negatief.
+- **Betalingen**: alleen op geboekte documenten, in delen mogelijk, samen nooit
+  meer dan het totaal. Optioneel uit welke financieringsbron (nooit uit een
+  hypotheek die in delen is gesplitst: dan het deel, bijv. het bouwdepot).
+  Betaalstatus: open, deels, betaald of te laat (vervaldatum voorbij).
+- **Dubbel invoeren** wordt herkend: hetzelfde bestand (SHA-256) bij een ander
+  document, en hetzelfde factuurnummer bij dezelfde leverancier.
+- **Terugzetten of laten vervallen** kan alleen zolang er geen betalingen zijn;
+  verwijderen haalt document, regels en betalingen in één keer weg.
+
+### 3.14 Dashboard en rapportages (vastgelegd in fase 7)
+
+- **Dashboard** op de echte cijfers van het actieve project, met dezelfde
+  rekenlogica en dezelfde omzetting (`lib/dashboard.ts`) als het voorbeeld.
+  Het voorbeeld met verzonnen cijfers blijft te zien via `/dashboard?demo=1`.
+- **Hoofdgetal**: zolang er geen financiering is ingevuld (fase 9) de
+  prognose eindkosten ten opzichte van het budget; daarna de financiële
+  ruimte (financiering − prognose).
+- **Kerncijfers**: budget, vastgelegd (of prognose), betaald en openstaand
+  met te laat en bijna vervallen. Daaronder budget en prognose per
+  categorie (alleen categorieën waar iets in staat), te betalen, nog niet
+  geboekt, financiering, betaald per maand en recente activiteit in gewone
+  taal (uit het activiteitenlog).
+- **Aan de slag**: zolang een nieuw project niet alle eerste stappen heeft
+  (budget, contract, documenten, partner), staan die bovenaan.
+- **Rapportages** per categorie (boom), per ruimte (met "niet toegewezen",
+  zodat het totaal klopt), per leverancier, betalingen en documenten. Eén
+  model per rapport (`lib/rapportages.ts`) voor de pagina, de CSV en Excel,
+  zodat de cijfers overal gelijk zijn. Regels zonder bedragen zijn op het
+  scherm standaard verborgen; de export bevat alles.
+- **Export**: CSV voor Nederlandse Excel (puntkomma's, decimale komma,
+  UTF-8 met BOM; tekst die op een formule lijkt wordt nooit uitgevoerd) en
+  Excel (`.xlsx`, één tabblad per rapport of alles in één werkmap, met echte
+  getallen en datums). **PDF** via het afdrukvenster van de browser: liggend
+  A4, altijd licht, zonder menu's.
+- Export alleen voor ingelogde leden van het project; de bestanden worden
+  nergens bewaard of gecachet.
+
+### 3.15 Financiering en bouwdepot (vastgelegd in fase 9)
+
+- **Bronnen** (`/financiering`): eigen geld, hypotheek, schenking, lening en
+  overig. Per bron het bedrag, wat eruit betaald is en het saldo; bovenaan de
+  totale financiering, de prognose, de **financiële ruimte** (financiering −
+  prognose; negatief = tekort) en wat er na de betalingen nog beschikbaar is.
+- **Hypotheek met bouwdepot**: in het formulier van de hypotheek vul je het
+  bedrag van het bouwdepot in; de app maakt de delen bouwdepot en overige
+  hypotheekruimte (samen precies het hypotheekbedrag). Opslaan gaat in één keer
+  (`save_funding_source`); bestaande delen blijven dezelfde rijen, zodat
+  betalingen en declaraties eraan gekoppeld blijven. Een deel met betalingen of
+  declaraties kan niet zomaar weg. Het soort bron ligt vast na het aanmaken.
+- **Betalingen zonder bron** (bijv. ingevoerd vóór de financiering) staan op
+  de financieringspagina en kunnen in één keer aan een bron worden gekoppeld.
+  In het betaalformulier heten delen "Bouwdepot (Hypotheek)".
+- **Declaraties bij het bouwdepot**: je kiest geboekte facturen en per factuur
+  het bedrag (standaard wat er nog van de factuur kan). Status: concept →
+  ingediend → uitbetaald, of afgewezen (telt dan niet meer mee). Nooit meer
+  declareren dan een factuur, en alle niet-afgewezen declaraties samen nooit
+  meer dan het bouwdepot.
+- **Uitbetalen** (`pay_out_depot_claim`): per factuur wordt wat nog openstond
+  een betaling uit het bouwdepot (op de datum van uitbetaling). Was de factuur
+  al (deels) zelf betaald (voorgeschoten), dan gaat dat deel van die betaling
+  over naar het bouwdepot, zo nodig gesplitst; de betaaldatum blijft. Zo klopt
+  het saldo van eigen geld én van het bouwdepot, en wordt nooit dubbel betaald.
+  Een uitbetaalde declaratie ligt vast.
+- **Bouwdepot-overzicht**: bedrag, uitbetaald, gedeclareerd (ingediend en
+  concept) en nog vrij, met een waarschuwing als de looptijd binnen 90 dagen
+  afloopt of verlopen is.
+- Het dashboard toont zodra er financiering is de financiële ruimte als
+  hoofdgetal; de activiteit noemt nieuwe bronnen en declaraties.
+
+### 3.16 Afronding (vastgelegd in fase 10)
+
+- **Installeerbare app (PWA)**: `app/manifest.ts` (naam, start op het
+  dashboard, snelkoppelingen "Bon fotograferen", "Factuur uploaden" en "Te
+  controleren"), iconen uit het logo (`scripts/maak-iconen.mjs`: 192/512,
+  maskable, Apple). Geen service worker: financiële gegevens worden bewust
+  niet offline bewaard; zonder verbinding toont de app een melding.
+- **Laden en fouten**: een laadscherm tijdens het ophalen (`loading.tsx`), een
+  Nederlandse foutpagina met "Opnieuw proberen" en een 404-pagina.
+- **Toegankelijkheid**: axe (WCAG 2.1 AA) zonder bevindingen op alle pagina's,
+  licht en donker, desktop en mobiel; "Naar de inhoud" als eerste
+  toetsenbordstop; voldoende contrast voor alle tekst.
+- **Beveiliging**:
+  - Content Security Policy met een nieuwe nonce per verzoek (`lib/csp.ts`,
+    `proxy.ts`): geen inline scripts of `eval`, afbeeldingen/PDF's/uploads
+    alleen van de eigen Supabase, geen iframes van andere sites
+    (`frame-ancestors 'none'`). Stijlen mogen inline (grafieken).
+  - Verder: `X-Frame-Options`, `nosniff`, referrer-beleid,
+    `Permissions-Policy`, HSTS en `Cross-Origin-Opener-Policy`.
+  - Doorverwijzingen na inloggen alleen naar de eigen site, ook met trucs als
+    tabs of backslashes in de link.
+  - Elke schrijfactie zoekt binnen het actieve project (naast RLS).
+  - Supabase-adviseurs nagelopen: de functies met verhoogde rechten
+    (project aanmaken, uitnodigen) zijn bewust en controleren zelf de rechten;
+    ontbrekende indexen op foreign keys zijn bij deze hoeveelheden gegevens
+    niet merkbaar. Geen geheimen in de code of de git-geschiedenis.
+  - Zoekmachines: `robots.txt` en `noindex`.
 
 ---
 
@@ -302,10 +519,11 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 
 ### Financiering
 
-| Tabel             | Belangrijkste velden                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `funding_sources` | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id (leeg = hoofdbron; gevuld = deel, bijv. bouwdepot) |
-| `depot_claims`    | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status (schermen later)                                            |
+| Tabel               | Belangrijkste velden                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `funding_sources`   | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id (leeg = hoofdbron; gevuld = deel, bijv. bouwdepot) |
+| `depot_claims`      | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status                                                             |
+| `depot_claim_lines` | declaratie, factuur (cost_document), bedrag — welke facturen in een declaratie zitten (0012)                                         |
 
 ### Documenten en AI
 
@@ -324,7 +542,19 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 - Ruimteverdeling per regel telt op tot precies 100%.
 - Uniek per project: leverancier + documentnummer (voor facturen), en sha256 van
   bestanden.
-- Betalingen op een document zijn samen nooit meer dan het documenttotaal.
+- Betalingen op een document zijn samen nooit meer dan het documenttotaal,
+  en alleen mogelijk op een geboekt document.
+- Een geboekt document heeft minstens één regel; is het totaal op het document
+  ingevuld, dan tellen de regels daar precies op uit. Bij boeken legt de
+  database vast wie en wanneer.
+- `save_cost_document` en `delete_cost_document` (0011): document met regels,
+  ruimteverdeling en betalingen in één transactie, met de rechten van de
+  gebruiker (RLS blijft gelden).
+- `save_funding_source`, `save_depot_claim`, `set_depot_claim_status` en
+  `pay_out_depot_claim` (0012): financiering en declaraties in één transactie,
+  met de rechten van de gebruiker. Declaraties alleen met geboekte facturen,
+  per factuur nooit meer dan het bedrag, samen nooit meer dan het bouwdepot;
+  een uitbetaalde declaratie ligt vast.
 - Row Level Security op elke tabel: lezen voor alle leden, schrijven alleen voor
   `eigenaar` en `bewerker`. Leden en uitnodigingen beheert alleen de `eigenaar`.
 
@@ -333,46 +563,88 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 ## 5. AI-documentherkenning
 
 **Uitgangspunt: de AI stelt voor, de gebruiker beslist.** Niets wordt automatisch
-geboekt.
+geboekt; alleen geboekte documenten tellen mee.
 
-1. **Upload** (camera op telefoon of PDF). De server berekent de sha256. Is
-   precies dit bestand al bekend, dan volgt direct de melding "dit document is al
-   geüpload" met een link.
-2. **Uitlezen**: Claude krijgt het document met een vast JSON-schema. Terug komen
-   per veld een waarde, een zekerheid (0–1) en de tekst waar het op gebaseerd is:
-   leverancier, KvK/IBAN, documenttype, nummer, datums, totaal, BTW per tarief en
-   **alle regels**, elk met een voorgestelde categorie (uit onze eigen lijst) en
-   ruimte.
-3. **Controle op de server**:
-   - som van de regels = totaal op document, BTW-bedragen kloppen per tarief;
-   - leverancier matchen op KvK, IBAN of naam;
-   - **contract of offerte voorstellen**: zelfde leverancier, verwijzing naar
-     offertenummer, bedrag past binnen het nog niet gefactureerde deel of komt
-     overeen met een termijn;
+1. **Upload** ("Bon fotograferen" opent op een telefoon meteen de camera,
+   "Factuur uploaden" kiest een PDF of foto). De browser berekent de sha256 en
+   de server controleert die: is precies dit bestand al bekend, dan wordt het
+   bestaande gebruikt; is het al ingevoerd, dan volgt "dit document is al
+   ingevoerd" met een link, en staat er al een voorstel voor, dan opent dat.
+   Grote foto's worden in de browser verkleind (langste zijde 2400 px, JPG).
+2. **Uitlezen**: Claude krijgt het document met een vast schema (structured
+   output, `lib/ai/schema.ts`). Terug komen per veld een waarde, een zekerheid
+   (0–1) en de tekst waar het op gebaseerd is: leverancier, KvK/IBAN/BTW-nummer,
+   documenttype, nummer, datums, betaaltermijn, totaal, BTW per tarief en
+   **alle regels**, elk met een voorgestelde categorie, ruimte of contractregel
+   uit onze eigen lijsten. Bij de contracten sturen we ook de termijnen en het
+   nog te factureren bedrag mee.
+3. **Controle op de server** (`lib/ai/controles.ts` en `lib/ai/voorstel.ts`,
+   los van wat de AI zegt):
+   - id's die niet bij het project horen of niet bij elkaar passen worden
+     weggegooid (een contract moet bij de leverancier horen, een termijn bij
+     het contract, een contractregel bij het contract);
+   - leverancier matchen op KvK, IBAN, BTW-nummer of naam;
    - **duplicaatdetectie**: zelfde leverancier + documentnummer, of zelfde bedrag +
      leverancier binnen ±7 dagen;
    - **verplichte gegevens aanwezig**: leverancier, documentdatum, totaal en
      minstens één regel; bij facturen ook documentnummer en vervaldatum (of
      betaaltermijn);
-   - **rekenkundige controles** (los van wat de AI zegt): per regel
-     `excl + btw = incl`, BTW-bedrag past bij het tarief (afrondingsmarge 1 cent
-     per regel), som van de regels = totaal op document, BTW per tarief = som van
-     de regels met dat tarief;
+   - **rekenkundige controles**: per regel `excl + btw = incl`, BTW-bedrag past
+     bij het tarief (afrondingsmarge 1 cent per regel), som van de regels = totaal
+     op document, BTW per tarief = som van de regels met dat tarief;
+   - een datum in de toekomst of een vervaldatum vóór de documentdatum;
    - een **zekerheid onder 85%** geldt alleen als _indicatieve_ waarschuwing. Ook
      een hoge zekerheid maakt een veld niet "goedgekeurd": de rekenkundige controles
      en de bevestiging door de gebruiker beslissen, niet het percentage van de AI.
-4. **Controlescherm**: links het origineel, rechts het voorstel. Per veld zie je
-   een markering: _ontbreekt_, _klopt niet_ (mislukte controle), _onzeker_ (< 85%)
-   of _controleren_. Regels kun je splitsen, samenvoegen en aan een andere
-   categorie, ruimte of contract koppelen.
+4. **Controlescherm** (`/te-controleren/[id]`): links het origineel, rechts de
+   aandachtspunten (_mogelijk dubbel_, _klopt niet_, _ontbreekt_, _onzeker_) met
+   de opmerkingen van de AI, en het gewone documentformulier, vooringevuld. Elk
+   punt staat ook bij het veld waar het over gaat. Regels kun je aanpassen,
+   toevoegen, verwijderen en aan een andere categorie, ruimte of contract
+   koppelen. Herkent de AI de leverancier niet, dan staat een nieuwe klaar met
+   KvK, IBAN en BTW-nummer van het document.
 5. **Bevestigen en boeken**: **elk** AI-voorstel moet door een gebruiker worden
-   bevestigd, ook als alles klopt. Zolang een verplicht veld ontbreekt of een
-   rekenkundige controle faalt, is de knop "Boeken" geblokkeerd. Na bevestiging
-   krijgt het document status `geboekt`, worden `gecontroleerd_door/op` vastgelegd
-   en telt het mee.
+   bevestigd, ook als alles klopt. Voor het boeken gelden dezelfde regels als bij
+   zelf invoeren: minstens één regel, elke regel hoort ergens bij, en is het
+   totaal ingevuld, dan tellen de regels daar precies op uit. Ontbreekt een
+   nummer, totaal of leverancier, dan staat dat bij de aandachtspunten, maar het
+   blokkeert het boeken niet (keuze van de opdrachtgever). BTW wordt per regel uit
+   bedrag en tarief berekend en klopt dus altijd. Na bevestiging krijgt het
+   document status `geboekt` en bron `ai`, legt de database vast wie en wanneer,
+   en wordt het voorstel `verwerkt` (gekoppeld aan het document). Opslaan als
+   concept kan ook; dan staat het document bij Te controleren.
 
-Privacy: documenten gaan voor het uitlezen naar de Claude API. De API-sleutel en
-alle AI-aanroepen blijven op de server.
+### Uitwerking (vastgelegd in fase 8)
+
+- Claude API via `@anthropic-ai/sdk`, alleen op de server (`lib/ai/herkennen.ts`).
+  Model `claude-opus-5-5` met structured output; bij overbelasting schakelt de
+  API zelf over op een ander model. Eén poging van maximaal 55 seconden, binnen
+  de 60 seconden van de serverfunctie (`maxDuration` op de pagina's).
+- Het antwoordschema voor Claude (`AntwoordSchema`) heeft hooguit 16 velden die
+  leeg mogen zijn (grens van de API): tekst en id's zijn dan lege tekst, alleen
+  bedragen en getallen `null`. De app zet het om naar het interne voorstel; een
+  test bewaakt de grens. Getest op een echte factuur: alles goed gelezen in
+  ongeveer 16 seconden, inclusief categorie en ruimte.
+- Mislukt het uitlezen, dan staat de technische melding van de API op het
+  controlescherm onder "Technische details".
+- De API-sleutel moet bij een workspace horen (kolom **Bereik** in de Console);
+  anders is `ANTHROPIC_WORKSPACE_ID` nodig (zie `docs/SUPABASE.md`).
+- PDF's tot 20 MB en foto's (JPG, PNG, WEBP) tot 5 MB. HEIC kan de AI niet
+  lezen; een iPhone levert bij het kiezen vanzelf een JPG.
+- Statussen van een voorstel: `bezig` → `te_controleren` of `mislukt` →
+  `verwerkt`. Bij `mislukt` (of na twee minuten nog `bezig`: de functie is
+  afgebroken) kun je opnieuw laten uitlezen of de gegevens zelf invullen.
+  Een voorstel verwijderen haalt ook het bestand weg als het nergens anders bij
+  hoort.
+- Maximaal 30 keer uitlezen per uur per project.
+- Zonder API-sleutel werkt alles behalve het uitlezen: na het uploaden ga je
+  meteen naar zelf invoeren, met het bestand al gekoppeld.
+- Voorstellen staan bij Te controleren, in de teller in het menu en op het
+  dashboard.
+
+Privacy: documenten gaan voor het uitlezen naar de Claude API (Anthropic). De
+API-sleutel (`ANTHROPIC_API_KEY`) en alle AI-aanroepen blijven op de server; de
+originelen blijven in de afgeschermde opslag van het project.
 
 ---
 
@@ -402,16 +674,16 @@ Leveranciers, Meer) met een centrale **"+"-knop** voor "Bon/factuur toevoegen".
 
 Na elke fase: testen, committen, pushen en wachten op feedback.
 
-| Fase                                  | Inhoud                                                                                                                       |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **0. Fundament**                      | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
-| 1. Ontwerp-shell                      | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
-| 2. Supabase + inloggen                | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
-| 3. Financieel datamodel + rekenlogica | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden                                                |
-| 4. Categorieën, ruimtes, budget       | Beheer en budgetpagina                                                                                                       |
-| 5. Leveranciers, offertes, contracten | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
-| 6. Documenten en betalingen           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
-| 7. Dashboard en rapportages           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
-| 8. AI-documentherkenning              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
-| 9. Financiering                       | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
-| 10. Afronding                         | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
+| Fase                                    | Inhoud                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 0. Fundament ✓                          | Next.js 16, TypeScript, Tailwind, ESLint, Prettier, Vitest, NL-opmaak voor euro en datum, dit document                       |
+| 1. Ontwerp-shell ✓                      | shadcn/ui, thema (licht/donker), zijbalk + mobiele tabbalk, KPI-kaart, tabel, lege toestanden                                |
+| 2. Supabase + inloggen ✓                | Auth, profielen, projecten, leden, uitnodigingen, RLS; **eerste online versie op Vercel** zodat beide accounts kunnen testen |
+| 3. Datamodel + rekenlogica ✓            | Alle migraties uit hoofdstuk 4, `lib/finance` met tests voor alle voorbeelden, Nederlands datumveld                          |
+| 4. Categorieën, ruimtes, budget ✓       | Beheer en budgetpagina                                                                                                       |
+| 5. Leveranciers, offertes, contracten ✓ | Offerte accepteren → contract, meer-/minderwerk, termijnschema                                                               |
+| 6. Documenten en betalingen ✓           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
+| 7. Dashboard en rapportages ✓           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
+| 8. AI-documentherkenning ✓              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
+| 9. Financiering ✓                       | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
+| 10. Afronding ✓                         | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein (zodra gekozen)                                        |

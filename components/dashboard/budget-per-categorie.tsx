@@ -6,12 +6,13 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status";
 import { cn } from "@/lib/cn";
 import { formatEuro, formatEuroVerschil } from "@/lib/format";
-import { prognose, type DemoCategorie } from "@/lib/demo/data";
+import Link from "next/link";
+import type { BudgetRij } from "@/lib/dashboard";
 
 const heel = { centen: false } as const;
 
-function Afwijking({ c }: { c: DemoCategorie }) {
-  const verschil = prognose(c) - c.budget;
+function Afwijking({ c }: { c: BudgetRij }) {
+  const verschil = c.cijfers.afwijking;
   if (verschil > 0)
     return (
       <StatusPill soort="kritiek">
@@ -54,14 +55,19 @@ function Legenda() {
 export function BudgetPerCategorie({
   categorieen,
 }: {
-  categorieen: DemoCategorie[];
+  categorieen: BudgetRij[];
 }) {
   const [weergave, setWeergave] = useState<"grafiek" | "tabel">("grafiek");
   const schaal = Math.max(
     1.1,
-    ...categorieen.map((c) => prognose(c) / c.budget),
+    ...categorieen
+      .filter((c) => c.cijfers.budget > 0)
+      .map((c) => c.cijfers.prognose / c.cijfers.budget),
   );
-  const pct = (v: number) => `${(v / schaal) * 100}%`;
+  const pct = (v: number) => `${(Math.min(v, schaal) / schaal) * 100}%`;
+  // Verhouding tot het budget; zonder budget loopt de balk tot het einde.
+  const tovBudget = (bedrag: number, c: BudgetRij) =>
+    c.cijfers.budget > 0 ? bedrag / c.cijfers.budget : bedrag > 0 ? schaal : 0;
 
   return (
     <Card aria-labelledby="budget-titel" className="pb-2">
@@ -102,14 +108,24 @@ export function BudgetPerCategorie({
         }
       />
 
-      {weergave === "grafiek" ? (
+      {categorieen.length === 0 ? (
+        <p className="text-muted px-5 pt-3 pb-3 text-sm sm:px-6">
+          Nog geen budget of kosten.{" "}
+          <Link
+            href="/budget"
+            className="text-accent-ink font-medium hover:underline"
+          >
+            Zet je budget op
+          </Link>
+        </p>
+      ) : weergave === "grafiek" ? (
         <>
           <div className="px-5 pt-4 sm:px-6">
             <Legenda />
           </div>
           <ul className="mt-2">
             {categorieen.map((c) => {
-              const p = prognose(c);
+              const p = c.cijfers.prognose;
               return (
                 <li
                   key={c.id}
@@ -130,16 +146,20 @@ export function BudgetPerCategorie({
                     <div className="relative h-3">
                       <div
                         className="bg-series-1-wash absolute inset-y-0 left-0 rounded-r"
-                        style={{ width: pct(p / c.budget) }}
+                        style={{ width: pct(tovBudget(p, c)) }}
                       />
                       <div
                         className="bg-series-1 absolute inset-y-0 left-0 rounded-r"
-                        style={{ width: pct(c.gefactureerd / c.budget) }}
+                        style={{
+                          width: pct(tovBudget(c.cijfers.gefactureerd, c)),
+                        }}
                       />
-                      <div
-                        className="bg-foreground absolute -inset-y-1 w-0.5 rounded-full"
-                        style={{ left: `calc(${pct(1)} - 1px)` }}
-                      />
+                      {c.cijfers.budget > 0 && (
+                        <div
+                          className="bg-foreground absolute -inset-y-1 w-0.5 rounded-full"
+                          style={{ left: `calc(${pct(1)} - 1px)` }}
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -158,17 +178,21 @@ export function BudgetPerCategorie({
                     <p className="mb-2 text-sm font-semibold">{c.naam}</p>
                     <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 tabular-nums">
                       <dt className="text-muted">Budget</dt>
-                      <dd className="text-right">{formatEuro(c.budget)}</dd>
+                      <dd className="text-right">
+                        {formatEuro(c.cijfers.budget)}
+                      </dd>
                       <dt className="text-muted">Gecontracteerd</dt>
                       <dd className="text-right">
-                        {formatEuro(c.gecontracteerd)}
+                        {formatEuro(c.cijfers.gecontracteerd)}
                       </dd>
                       <dt className="text-muted">Gefactureerd</dt>
                       <dd className="text-right">
-                        {formatEuro(c.gefactureerd)}
+                        {formatEuro(c.cijfers.gefactureerd)}
                       </dd>
                       <dt className="text-muted">Betaald</dt>
-                      <dd className="text-right">{formatEuro(c.betaald)}</dd>
+                      <dd className="text-right">
+                        {formatEuro(c.cijfers.betaald)}
+                      </dd>
                       <dt className="border-border mt-1 border-t pt-1 font-medium">
                         Prognose
                       </dt>
@@ -226,28 +250,28 @@ export function BudgetPerCategorie({
                   >
                     {c.naam}
                     {c.afgesloten && (
-                      <span className="text-subtle ml-1.5 text-xs">
+                      <span className="text-muted ml-1.5 text-xs">
                         (afgesloten)
                       </span>
                     )}
                   </th>
                   <td className="px-3 text-right">
-                    {formatEuro(c.budget, heel)}
+                    {formatEuro(c.cijfers.budget, heel)}
                   </td>
                   <td className="px-3 text-right">
-                    {formatEuro(c.gecontracteerd, heel)}
+                    {formatEuro(c.cijfers.gecontracteerd, heel)}
                   </td>
                   <td className="px-3 text-right">
-                    {formatEuro(c.gefactureerd, heel)}
+                    {formatEuro(c.cijfers.gefactureerd, heel)}
                   </td>
                   <td className="px-3 text-right">
-                    {formatEuro(c.betaald, heel)}
+                    {formatEuro(c.cijfers.betaald, heel)}
                   </td>
                   <td className="px-3 text-right font-medium">
-                    {formatEuro(prognose(c), heel)}
+                    {formatEuro(c.cijfers.prognose, heel)}
                   </td>
                   <td className="px-3 pr-5 text-right sm:pr-6">
-                    {formatEuroVerschil(prognose(c) - c.budget, heel)}
+                    {formatEuroVerschil(c.cijfers.afwijking, heel)}
                   </td>
                 </tr>
               ))}
