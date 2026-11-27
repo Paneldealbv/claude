@@ -19,8 +19,15 @@ export const AI_TYPEN = [
   "image/webp",
 ] as const;
 
+/** Sleutel uit de omgeving, zonder per ongeluk meegeplakte spaties of quotes. */
+function apiSleutel() {
+  return (process.env.ANTHROPIC_API_KEY ?? "")
+    .trim()
+    .replace(/^["']+|["']+$/g, "");
+}
+
 export function aiBeschikbaar() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return apiSleutel() !== "";
 }
 
 export type HerkenContext = {
@@ -143,7 +150,17 @@ export async function leesDocument(
         };
 
   // Eén poging binnen de tijd van een serverfunctie (Vercel: max. 60 s).
-  const client = new Anthropic({ timeout: 55_000, maxRetries: 0 });
+  // Een sleutel die niet aan een workspace hoort (sk-ant-usr-…) heeft de
+  // workspace nodig in de header; die staat dan in ANTHROPIC_WORKSPACE_ID.
+  const werkruimte = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  const client = new Anthropic({
+    apiKey: apiSleutel(),
+    timeout: 55_000,
+    maxRetries: 0,
+    ...(werkruimte
+      ? { defaultHeaders: { "anthropic-workspace-id": werkruimte } }
+      : {}),
+  });
   const aanvraag = {
     model: AI_MODEL,
     max_tokens: 16000,

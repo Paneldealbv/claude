@@ -20,6 +20,7 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`     | nee, voor de browser bedoeld | `.env.local`, Vercel                                    |
 | `NEXT_PUBLIC_SITE_URL`                     | nee                          | `.env.local`, Vercel                                    |
 | `ANTHROPIC_API_KEY` (AI-herkenning)        | **ja**, alleen op de server  | `.env.local`, Vercel (Production en Preview)            |
+| `ANTHROPIC_WORKSPACE_ID` (optioneel)       | nee                          | alleen bij een sleutel zonder workspace (`sk-ant-usr-`) |
 | Secret key (`sb_secret_…`)                 | **ja**                       | wordt door de app niet gebruikt                         |
 | Persoonlijk toegangstoken (Management API) | **ja**                       | alleen tijdelijk bij het uitvoeren van het beheerscript |
 | Databasewachtwoord                         | **ja**                       | alleen bij de eigenaar                                  |
@@ -146,6 +147,12 @@ Productie: `https://nieuwbouw-dashboard-paneldeal.vercel.app` (vanaf `main`).
    **Preview**. Nooit in de code of in GitHub.
 3. Opnieuw deployen (**Deployments → … → Redeploy**), want een nieuwe variabele
    geldt pas na een deploy.
+
+Maak de sleutel binnen een workspace (begint met `sk-ant-api03-`). Een
+persoonlijke sleutel zonder workspace (`sk-ant-usr-`) werkt alleen als je ook
+`ANTHROPIC_WORKSPACE_ID` instelt (het id van de workspace, `wrkspc_…`). Lukt
+het uitlezen niet, dan staat de reden op het controlescherm onder
+"Technische details".
 
 Zonder sleutel werkt de app gewoon; alleen het automatisch uitlezen staat uit.
 
