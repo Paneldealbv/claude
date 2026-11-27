@@ -258,25 +258,6 @@ export async function documentOpslaan(
     extractie = data;
   }
 
-  if (status === "geboekt" && extractie) {
-    // Boeken na controle van een AI-voorstel: de gegevens die nodig zijn om
-    // het document te controleren en dubbel invoeren te voorkomen.
-    const verplicht: Record<string, string> = {};
-    if (k.type !== "bon" && !k.nummer) {
-      verplicht.nummer = "Vul het nummer van het document in.";
-    }
-    if (totaal === null) {
-      verplicht.totaal =
-        "Vul het totaal van het document in; zo wordt gecontroleerd of de regels kloppen.";
-    }
-    if (Object.keys(verplicht).length) {
-      return {
-        veldfouten: verplicht,
-        fout: "Vul de gemarkeerde velden in om te boeken, of sla het op als concept.",
-      };
-    }
-  }
-
   if (status === "geboekt") {
     if (!regels.length) {
       return { fout: "Voeg minstens één regel toe om het document te boeken." };
@@ -329,14 +310,6 @@ export async function documentOpslaan(
       .eq("id", k.contractId)
       .maybeSingle();
     leverancierId = c?.supplier_id ?? null;
-  }
-  if (status === "geboekt" && extractie && k.type !== "bon" && !leverancierId) {
-    return {
-      veldfouten: {
-        leverancierId: "Kies de leverancier of maak een nieuwe aan.",
-      },
-      fout: "Vul de gemarkeerde velden in om te boeken, of sla het op als concept.",
-    };
   }
 
   const document = {

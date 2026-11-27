@@ -145,7 +145,7 @@ function maakPng(breedte, hoogte) {
 const TESTFACTUUR = [
   "Bouwbedrijf Testmans B.V.",
   "Industrieweg 12, 1234 AB Voorbeeld",
-  "KvK 12345678 - BTW NL001234567B01 - IBAN NL91ABNA0417164300",
+  "KvK 24681357 - BTW NL002468135B01 - IBAN NL20INGB0001234567",
   "",
   "FACTUUR",
   "Factuurnummer: TM-2026-0042",
@@ -1922,7 +1922,7 @@ async function main() {
           .getByLabel("Uiterlijk betalen op (optioneel)")
           .inputValue()) === "04-12-2026" &&
         (await pA
-          .getByLabel("Totaal op het document", { exact: true })
+          .getByLabel("Totaal op het document (optioneel)")
           .inputValue()) === "302,50" &&
         (await pA.getByLabel("Leverancier", { exact: true }).inputValue()) ===
           "__nieuw__" &&
@@ -2009,13 +2009,9 @@ async function main() {
       "verwerkt voorstel opent het document en staat niet meer bij Te controleren",
     );
 
-    // Mislukt voorstel: zelf invoeren; boeken vraagt nummer en totaal; weggooien.
+    // Mislukt voorstel: zelf invoeren en boeken; net als bij zelf invoeren
+    // zijn nummer, totaal en leverancier niet verplicht.
     const bestand2 = await testBestand("onleesbaar.pdf");
-    const { data: bestand2Info } = await clientA
-      .from("files")
-      .select("storage_path")
-      .eq("id", bestand2)
-      .single();
     const [voorstel2] = await sql(`
       insert into public.document_extractions
         (project_id, file_id, status, model, error)
@@ -2033,37 +2029,72 @@ async function main() {
           (aiAan ? 1 : 0),
       "mislukt voorstel: melding en zelf invoeren (opnieuw uitlezen alleen als de AI is ingesteld)",
     );
-    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.getByLabel("Omschrijving regel 1").fill("Kitten en lijm");
     await pA
-      .getByText("Vul de gemarkeerde velden in om te boeken")
-      .waitFor({ timeout: 20000 });
+      .getByLabel("Hoort bij regel 1")
+      .selectOption({ label: "Afbouw › Badkamer & toilet" });
+    await pA.getByLabel("Bedrag regel 1").fill("24,95");
+    await pA.getByRole("button", { name: "Boeken" }).click();
+    await pA.waitForURL(uuidEind("/documenten"), { timeout: 20000 });
+    const zelfIngevoerd = idUitUrl(pA);
+    const { data: zelfDoc } = await clientA
+      .from("cost_documents")
+      .select(
+        "status, source, document_number, stated_total_incl_cents, supplier_id, file_id",
+      )
+      .eq("id", zelfIngevoerd)
+      .single();
+    const { data: voorstel2Na } = await clientA
+      .from("document_extractions")
+      .select("status, cost_document_id")
+      .eq("id", voorstel2.id)
+      .single();
     ok(
-      (await pA.getByText("Vul het nummer van het document in.").count()) ===
-        1 &&
-        (await pA.getByText("Vul het totaal van het document in").count()) ===
-          1,
-      "boeken vanuit een voorstel vraagt om documentnummer en totaal",
+      zelfDoc.status === "geboekt" &&
+        zelfDoc.source === "ai" &&
+        zelfDoc.document_number === null &&
+        zelfDoc.stated_total_incl_cents === null &&
+        zelfDoc.supplier_id === null &&
+        zelfDoc.file_id === bestand2 &&
+        voorstel2Na.status === "verwerkt" &&
+        voorstel2Na.cost_document_id === zelfIngevoerd,
+      "vanuit een mislukt voorstel zelf ingevoerd en geboekt, zonder nummer, totaal of leverancier (zelfde regels als zelf invoeren)",
     );
+
+    // Voorstel weggooien (bijv. verkeerde foto): het bestand gaat mee.
+    const bestand3 = await testBestand("verkeerde-foto.pdf");
+    const { data: bestand3Info } = await clientA
+      .from("files")
+      .select("storage_path")
+      .eq("id", bestand3)
+      .single();
+    const [voorstel3] = await sql(`
+      insert into public.document_extractions
+        (project_id, file_id, status, model, error)
+      values ('${projectId}', '${bestand3}', 'mislukt', 'e2e-testvoorstel',
+              'Dit lijkt geen factuur of bon.')
+      returning id`);
+    await pA.goto(`${APP}/te-controleren/${voorstel3.id}`);
     await pA.getByLabel("Ja, verwijder dit voorstel.").check();
     await pA.getByRole("button", { name: "Voorstel verwijderen" }).click();
     await pA.waitForURL((u) => u.pathname === "/te-controleren", {
       timeout: 20000,
     });
-    const { data: voorstel2Na } = await clientA
+    const { data: voorstel3Na } = await clientA
       .from("document_extractions")
       .select("id")
-      .eq("id", voorstel2.id);
-    const { data: bestand2Na } = await clientA
+      .eq("id", voorstel3.id);
+    const { data: bestand3Na } = await clientA
       .from("files")
       .select("id")
-      .eq("id", bestand2);
-    const [opslag2] = await sql(
-      `select count(*) as n from storage.objects where bucket_id = 'documenten' and name = ${sqlTekst(bestand2Info.storage_path)}`,
+      .eq("id", bestand3);
+    const [opslag3] = await sql(
+      `select count(*) as n from storage.objects where bucket_id = 'documenten' and name = ${sqlTekst(bestand3Info.storage_path)}`,
     );
     ok(
-      voorstel2Na.length === 0 &&
-        bestand2Na.length === 0 &&
-        Number(opslag2.n) === 0,
+      voorstel3Na.length === 0 &&
+        bestand3Na.length === 0 &&
+        Number(opslag3.n) === 0,
       "voorstel verwijderd, met het bestand uit de opslag (hoorde nergens anders bij)",
     );
 
@@ -2111,10 +2142,14 @@ async function main() {
       const start = Date.now();
       await pA.getByRole("button", { name: "Uitlezen" }).click();
       await pA.waitForURL(uuidEind("/te-controleren"), { timeout: 90000 });
-      await pA
-        .getByRole("heading", { name: "Gegevens" })
-        .waitFor({ timeout: 20000 });
       const duur = Math.round((Date.now() - start) / 1000);
+      await pA
+        .getByRole("heading", { name: "Voorstel controleren" })
+        .waitFor({ timeout: 20000 });
+      if ((await pA.getByRole("heading", { name: "Gegevens" }).count()) === 0) {
+        const melding = await pA.getByRole("alert").first().innerText();
+        ok(false, `echte herkenning mislukt na ${duur} s: ${melding}`);
+      }
       if (SCREENSHOTS)
         await pA.screenshot({
           path: `${SCREENSHOTS}/ai-echt.png`,

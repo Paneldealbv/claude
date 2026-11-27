@@ -309,11 +309,7 @@ export function DocumentFormulier({
         )}
         <div>
           <BedragVeld
-            label={
-              extractieId
-                ? "Totaal op het document"
-                : "Totaal op het document (optioneel)"
-            }
+            label="Totaal op het document (optioneel)"
             naam="totaal"
             defaultValue={document.totaalOpDocument}
             hint="Incl. BTW. Zo controleert het dashboard of de regels kloppen."

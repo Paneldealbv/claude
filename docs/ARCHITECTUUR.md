@@ -538,9 +538,11 @@ geboekt; alleen geboekte documenten tellen mee.
    koppelen. Herkent de AI de leverancier niet, dan staat een nieuwe klaar met
    KvK, IBAN en BTW-nummer van het document.
 5. **Bevestigen en boeken**: **elk** AI-voorstel moet door een gebruiker worden
-   bevestigd, ook als alles klopt. Boeken kan pas als het formulier volledig is:
-   documentnummer (niet bij een bon), totaal en leverancier ingevuld, elke regel
-   hoort ergens bij en de regels tellen op tot het totaal. BTW wordt per regel uit
+   bevestigd, ook als alles klopt. Voor het boeken gelden dezelfde regels als bij
+   zelf invoeren: minstens één regel, elke regel hoort ergens bij, en is het
+   totaal ingevuld, dan tellen de regels daar precies op uit. Ontbreekt een
+   nummer, totaal of leverancier, dan staat dat bij de aandachtspunten, maar het
+   blokkeert het boeken niet (keuze van de opdrachtgever). BTW wordt per regel uit
    bedrag en tarief berekend en klopt dus altijd. Na bevestiging krijgt het
    document status `geboekt` en bron `ai`, legt de database vast wie en wanneer,
    en wordt het voorstel `verwerkt` (gekoppeld aan het document). Opslaan als
