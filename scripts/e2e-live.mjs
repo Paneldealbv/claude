@@ -2155,7 +2155,9 @@ async function main() {
         .waitFor({ timeout: 20000 });
       if ((await pA.getByRole("heading", { name: "Gegevens" }).count()) === 0) {
         const melding = await pA.getByRole("alert").first().innerText();
-        const details = pA.locator("details");
+        const details = pA.locator("details", {
+          hasText: "Technische details",
+        });
         const detail = (await details.count())
           ? normaal(await details.first().textContent())
           : "";
