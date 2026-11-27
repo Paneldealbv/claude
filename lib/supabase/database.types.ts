@@ -639,6 +639,61 @@ export type Database = {
           },
         ]
       }
+      depot_claim_lines: {
+        Row: {
+          amount_cents: number
+          cost_document_id: string
+          created_at: string
+          created_by: string | null
+          depot_claim_id: string
+          id: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          cost_document_id: string
+          created_at?: string
+          created_by?: string | null
+          depot_claim_id: string
+          id?: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          cost_document_id?: string
+          created_at?: string
+          created_by?: string | null
+          depot_claim_id?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "depot_claim_lines_project_id_cost_document_id_fkey"
+            columns: ["project_id", "cost_document_id"]
+            isOneToOne: false
+            referencedRelation: "cost_documents"
+            referencedColumns: ["project_id", "id"]
+          },
+          {
+            foreignKeyName: "depot_claim_lines_project_id_depot_claim_id_fkey"
+            columns: ["project_id", "depot_claim_id"]
+            isOneToOne: false
+            referencedRelation: "depot_claims"
+            referencedColumns: ["project_id", "id"]
+          },
+          {
+            foreignKeyName: "depot_claim_lines_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       depot_claims: {
         Row: {
           amount_cents: number
@@ -1457,10 +1512,30 @@ export type Database = {
           status: string
         }[]
       }
+      pay_out_depot_claim: {
+        Args: { p_claim: string; p_date: string }
+        Returns: undefined
+      }
       revoke_invite: { Args: { p_invite: string }; Returns: undefined }
       save_cost_document: {
         Args: { p_document: Json; p_lines: Json }
         Returns: string
+      }
+      save_depot_claim: {
+        Args: { p_claim: Json; p_lines: Json }
+        Returns: string
+      }
+      save_funding_source: {
+        Args: { p_parts: Json; p_source: Json }
+        Returns: string
+      }
+      set_depot_claim_status: {
+        Args: {
+          p_claim: string
+          p_date: string
+          p_status: Database["public"]["Enums"]["depot_claim_status"]
+        }
+        Returns: undefined
       }
     }
     Enums: {

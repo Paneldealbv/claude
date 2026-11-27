@@ -43,19 +43,21 @@ begin
   if n <> 4 then raise exception 'MISLUKT: % opslagregels i.p.v. 4', n; end if;
   ok := array_append(ok, 'opslagregels aanwezig');
 
-  -- Documentfuncties (0011): alleen voor ingelogde gebruikers en met hun
+  -- Document- en financieringsfuncties (0011, 0012): alleen voor ingelogde gebruikers en met hun
   -- eigen rechten (security invoker), zodat RLS blijft gelden.
   select count(*) into n
   from pg_proc p join pg_namespace s on s.oid = p.pronamespace
   where s.nspname = 'public'
-    and p.proname in ('save_cost_document', 'delete_cost_document')
+    and p.proname in ('save_cost_document', 'delete_cost_document',
+                      'save_funding_source', 'save_depot_claim',
+                      'set_depot_claim_status', 'pay_out_depot_claim')
     and not p.prosecdef
     and has_function_privilege('authenticated', p.oid, 'execute')
     and not has_function_privilege('anon', p.oid, 'execute');
-  if n <> 2 then
-    raise exception 'MISLUKT: documentfuncties ontbreken of hebben verkeerde rechten (% van 2)', n;
+  if n <> 6 then
+    raise exception 'MISLUKT: document- en financieringsfuncties ontbreken of hebben verkeerde rechten (% van 6)', n;
   end if;
-  ok := array_append(ok, 'documentfuncties alleen voor ingelogde gebruikers');
+  ok := array_append(ok, 'document- en financieringsfuncties alleen voor ingelogde gebruikers');
 
   -- Testgebruikers (worden teruggedraaid) --------------------------------------
   insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data, aud, role)
