@@ -150,8 +150,8 @@ export async function leesDocument(
         };
 
   // Eén poging binnen de tijd van een serverfunctie (Vercel: max. 60 s).
-  // Een sleutel die niet aan een workspace hoort (sk-ant-usr-…) heeft de
-  // workspace nodig in de header; die staat dan in ANTHROPIC_WORKSPACE_ID.
+  // Een sleutel die niet aan een workspace hoort (bereik "Organisatie") heeft
+  // de workspace nodig in de header; die staat dan in ANTHROPIC_WORKSPACE_ID.
   const werkruimte = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
   const client = new Anthropic({
     apiKey: apiSleutel(),
