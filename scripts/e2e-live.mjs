@@ -2180,7 +2180,7 @@ async function main() {
             .getByLabel("Uiterlijk betalen op (optioneel)")
             .inputValue()) === "26-11-2026" &&
           (await pA
-            .getByLabel("Totaal op het document", { exact: true })
+            .getByLabel("Totaal op het document (optioneel)")
             .inputValue()) === "1.331,00",
         `echte herkenning (${duur} s): nummer, datum, vervaldatum en totaal goed gelezen`,
       );

@@ -554,6 +554,15 @@ geboekt; alleen geboekte documenten tellen mee.
   Model `claude-opus-5-5` met structured output; bij overbelasting schakelt de
   API zelf over op een ander model. Eén poging van maximaal 55 seconden, binnen
   de 60 seconden van de serverfunctie (`maxDuration` op de pagina's).
+- Het antwoordschema voor Claude (`AntwoordSchema`) heeft hooguit 16 velden die
+  leeg mogen zijn (grens van de API): tekst en id's zijn dan lege tekst, alleen
+  bedragen en getallen `null`. De app zet het om naar het interne voorstel; een
+  test bewaakt de grens. Getest op een echte factuur: alles goed gelezen in
+  ongeveer 16 seconden, inclusief categorie en ruimte.
+- Mislukt het uitlezen, dan staat de technische melding van de API op het
+  controlescherm onder "Technische details".
+- De API-sleutel moet bij een workspace horen (kolom **Bereik** in de Console);
+  anders is `ANTHROPIC_WORKSPACE_ID` nodig (zie `docs/SUPABASE.md`).
 - PDF's tot 20 MB en foto's (JPG, PNG, WEBP) tot 5 MB. HEIC kan de AI niet
   lezen; een iPhone levert bij het kiezen vanzelf een JPG.
 - Statussen van een voorstel: `bezig` → `te_controleren` of `mislukt` →
