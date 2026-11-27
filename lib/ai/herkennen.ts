@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { HerkenningSchema, type Herkenning } from "./schema";
+import { AntwoordSchema, naarHerkenning, type Herkenning } from "./schema";
 
 /*
  * Documentherkenning met de Claude API (docs/ARCHITECTUUR.md § 5).
@@ -66,9 +66,9 @@ Regels:
 - regels: neem elke kostenregel over met omschrijving, bedrag inclusief BTW, bedrag exclusief BTW (als dat er staat) en het BTW-tarief in procenten (21, 9 of 0; BTW verlegd is 0). Een korting is een aparte regel met een negatief bedrag. Bij een kassabon met veel artikelen mag je artikelen uit dezelfde categorie samenvoegen tot één regel; noem de artikelen dan in de omschrijving. Bij een creditnota neem je de bedragen positief over, zoals ze op het document staan.
 - Staan er alleen bedragen exclusief BTW, reken dan het bedrag inclusief BTW uit en meld dat in opmerkingen.
 - De regels moeten samen optellen tot het totaal op het document. Lukt dat niet, neem de regels dan over zoals ze er staan en meld het verschil in opmerkingen; pas niets aan om het kloppend te maken.
-- categorie_id, ruimte_id, contract_id, contract_regel_id en termijn_id: gebruik uitsluitend id's uit de meegestuurde lijsten, anders null. Stel een contract alleen voor als de leverancier overeenkomt. Een termijn alleen als het document een termijn noemt of het bedrag duidelijk bij een termijn past. Een ruimte alleen als die duidelijk uit het document blijkt.
-- zekerheid: een eerlijke schatting tussen 0 en 1 per veld en per regel. Is iets onleesbaar of ontbreekt het, geef dan null als waarde en een lage zekerheid. Verzin nooit gegevens.
-- bron: de letterlijke tekst op het document waarop de waarde is gebaseerd, kort.
+- categorie_id, ruimte_id, contract_id, contract_regel_id en termijn_id: gebruik uitsluitend id's uit de meegestuurde lijsten, anders lege tekst (""). Stel een contract alleen voor als de leverancier overeenkomt. Een termijn alleen als het document een termijn noemt of het bedrag duidelijk bij een termijn past. Een ruimte alleen als die duidelijk uit het document blijkt.
+- zekerheid: een eerlijke schatting tussen 0 en 1 per veld en per regel. Is iets onleesbaar of ontbreekt het, geef dan lege tekst ("") bij tekst, null bij een bedrag of getal en "onbekend" bij soort, met een lage zekerheid. Verzin nooit gegevens.
+- bron: de letterlijke tekst op het document waarop de waarde is gebaseerd, kort; lege tekst als er niets staat.
 - verwijzing: een offerte-, order- of projectnummer waarnaar het document verwijst.
 - is_document: false als het geen factuur, creditnota of bon is.
 - opmerkingen: korte Nederlandse zinnen over wat opviel, bijvoorbeeld handgeschreven, deels onleesbaar, BTW verlegd of een verschil in het totaal.`;
@@ -166,7 +166,7 @@ export async function leesDocument(
     max_tokens: 16000,
     output_config: {
       effort: "medium" as const,
-      format: betaZodOutputFormat(HerkenningSchema),
+      format: betaZodOutputFormat(AntwoordSchema),
     },
     system: SYSTEEM,
     messages: [
@@ -221,7 +221,7 @@ export async function leesDocument(
     }
     return {
       ok: true,
-      herkenning: bericht.parsed_output,
+      herkenning: naarHerkenning(bericht.parsed_output),
       model: bericht.model,
     };
   } catch (fout) {
