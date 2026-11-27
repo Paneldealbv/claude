@@ -250,7 +250,7 @@ export function BudgetPerCategorie({
                   >
                     {c.naam}
                     {c.afgesloten && (
-                      <span className="text-subtle ml-1.5 text-xs">
+                      <span className="text-muted ml-1.5 text-xs">
                         (afgesloten)
                       </span>
                     )}

@@ -295,7 +295,7 @@ export function KostenRegelsEditor({
                 <p className="text-muted mt-1.5 flex items-center gap-1 px-1 text-xs">
                   <DoorOpen className="size-3" />
                   {r.ruimtes.map((x) => ruimteNaam.get(x) ?? "?").join(", ")}
-                  <span className="text-subtle">(gelijk verdeeld)</span>
+                  <span className="text-muted">(gelijk verdeeld)</span>
                 </p>
               )}
               {r.ruimtesOpen && (

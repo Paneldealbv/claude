@@ -384,6 +384,7 @@ export async function contractRegelRuimtes(
   const { error: wisFout } = await supabase
     .from("room_allocations")
     .delete()
+    .eq("project_id", project.id)
     .eq("contract_line_id", id);
   if (wisFout) return { fout: dbFout(wisFout) };
   if (ruimteIds.data.length) {

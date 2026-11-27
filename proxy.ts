@@ -6,8 +6,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Niet voor statische bestanden en afbeeldingen.
+  // Niet voor statische bestanden, afbeeldingen, het app-manifest (wordt
+  // zonder cookies opgehaald) en robots.txt.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

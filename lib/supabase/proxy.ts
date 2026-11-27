@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "./database.types";
 import { NextResponse, type NextRequest } from "next/server";
+import { contentSecurityPolicy, maakNonce } from "@/lib/csp";
 import { sessieCookieOpties, supabaseEnv } from "./env";
 
 /** Pagina's die zonder inloggen bereikbaar zijn. */
@@ -25,7 +26,25 @@ const begintMet = (pad: string, lijst: string[]) =>
  */
 export async function updateSession(request: NextRequest) {
   const { url, key } = supabaseEnv();
-  let response = NextResponse.next({ request });
+
+  // Content Security Policy met een nieuwe nonce per verzoek. Next.js leest
+  // de nonce uit de header van het verzoek en zet hem op zijn eigen scripts.
+  const nonce = maakNonce();
+  const csp = contentSecurityPolicy(nonce, {
+    supabaseUrl: url,
+    https: request.nextUrl.protocol === "https:",
+    dev: process.env.NODE_ENV === "development",
+  });
+  // Bij elke (nieuwe) response de actuele cookies van het verzoek meesturen.
+  const volgende = () => {
+    const headers = new Headers(request.headers);
+    headers.set("x-nonce", nonce);
+    headers.set("content-security-policy", csp);
+    const r = NextResponse.next({ request: { headers } });
+    r.headers.set("Content-Security-Policy", csp);
+    return r;
+  };
+  let response = volgende();
 
   const supabase = createServerClient<Database>(url, key, {
     cookieOptions: sessieCookieOpties,
@@ -37,7 +56,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        response = NextResponse.next({ request });
+        response = volgende();
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, {
             ...options,

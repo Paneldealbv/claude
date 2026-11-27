@@ -146,7 +146,11 @@ function GebruikerBalk() {
         </form>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex -space-x-1.5" aria-label="Projectleden">
+        <div
+          className="flex -space-x-1.5"
+          role="group"
+          aria-label="Projectleden"
+        >
           {anderen.map((l) => (
             <span
               key={l.naam}
@@ -191,7 +195,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {navGroups.map((g, i) => (
           <div key={g.label ?? i} className={cn(i > 0 && "mt-5")}>
             {g.label && (
-              <p className="text-sidebar-muted/70 mb-1.5 px-3 text-[11px] font-medium tracking-wider uppercase">
+              <p className="text-sidebar-muted mb-1.5 px-3 text-[11px] font-medium tracking-wider uppercase">
                 {g.label}
               </p>
             )}

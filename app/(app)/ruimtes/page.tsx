@@ -92,7 +92,7 @@ export default async function RuimtesPagina() {
                 {STANDAARD_RUIMTES.map((r) => (
                   <li key={r.naam}>
                     {r.naam}{" "}
-                    <span className="text-subtle">· {r.verdieping}</span>
+                    <span className="text-muted">· {r.verdieping}</span>
                   </li>
                 ))}
               </ul>

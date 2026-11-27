@@ -8,7 +8,7 @@ import { formatEuro, formatEuroVerschil } from "@/lib/format";
 const heel = { centen: false } as const;
 
 export function Afwijking({ bedrag }: { bedrag: number }) {
-  if (bedrag === 0) return <span className="text-subtle">—</span>;
+  if (bedrag === 0) return <span className="text-muted">—</span>;
   return (
     <StatusPill soort={bedrag > 0 ? "kritiek" : "positief"}>
       {formatEuroVerschil(bedrag, heel)}

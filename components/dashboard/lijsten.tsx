@@ -223,7 +223,7 @@ export function Activiteit({ items }: { items: ActiviteitItem[] }) {
                     </span>
                   )}
                 </p>
-                <p className="text-subtle mt-0.5 text-xs">{a.wanneer}</p>
+                <p className="text-muted mt-0.5 text-xs">{a.wanneer}</p>
               </div>
             </li>
           ))}

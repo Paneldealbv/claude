@@ -139,7 +139,7 @@ export function FinancieringKaart({ data }: { data: FinancieringResultaat }) {
               <span className="flex-1">
                 {s.naam}
                 {s.isDeel && (
-                  <span className="text-subtle"> · deel hypotheek</span>
+                  <span className="text-muted"> · deel hypotheek</span>
                 )}
               </span>
               <span className="font-medium tabular-nums">

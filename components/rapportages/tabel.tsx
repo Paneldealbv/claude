@@ -111,7 +111,7 @@ export function RapportTabel({ rapport }: { rapport: Rapport }) {
                   }
                   return (
                     <td key={j} className={klassen}>
-                      {inhoud ?? <span className="text-subtle">—</span>}
+                      {inhoud ?? <span className="text-muted">—</span>}
                       {k.balk && !r.totaal && typeof w === "number" && (
                         <div
                           aria-hidden="true"

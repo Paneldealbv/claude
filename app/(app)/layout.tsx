@@ -1,4 +1,5 @@
 import { AddDocumentProvider } from "@/components/shell/add-document";
+import { OfflineMelding } from "@/components/shell/offline-melding";
 import { MobileHeader, MobileTabbar } from "@/components/shell/mobile-nav";
 import {
   ShellProvider,
@@ -63,10 +64,21 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <ShellProvider data={shell}>
       <AddDocumentProvider>
+        <a
+          href="#inhoud"
+          className="bg-accent text-accent-foreground sr-only rounded-xl px-4 py-2.5 text-sm font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50"
+        >
+          Naar de inhoud
+        </a>
+        <OfflineMelding />
         <Sidebar />
         <div className="lg:pl-64 print:pl-0">
           <MobileHeader />
-          <main className="pb-tabbar mx-auto w-full max-w-[1400px] px-4 pt-6 sm:px-6 lg:px-10 lg:pt-10 lg:pb-12 print:max-w-none print:p-0">
+          <main
+            id="inhoud"
+            tabIndex={-1}
+            className="pb-tabbar mx-auto w-full max-w-[1400px] px-4 pt-6 outline-none sm:px-6 lg:px-10 lg:pt-10 lg:pb-12 print:max-w-none print:p-0"
+          >
             {children}
           </main>
         </div>

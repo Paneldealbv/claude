@@ -98,7 +98,7 @@ export async function ruimteWijzigen(
   _vorige: ActieStatus,
   formData: FormData,
 ): Promise<ActieStatus> {
-  const { fout } = await bewerkbaarProject();
+  const { project, fout } = await bewerkbaarProject();
   if (fout) return { fout };
   const waarden = {
     naam: tekst(formData, "naam"),
@@ -111,6 +111,7 @@ export async function ruimteWijzigen(
   const { error } = await supabase
     .from("rooms")
     .update({ name: invoer.data.naam, floor: invoer.data.verdieping || null })
+    .eq("project_id", project.id)
     .eq("id", tekst(formData, "id"));
   if (error) return { fout: dbFout(error), waarden };
   vernieuw();
@@ -141,6 +142,7 @@ export async function ruimteVerplaatsen(formData: FormData): Promise<void> {
         : supabase
             .from("rooms")
             .update({ sort_order: i + 1 })
+            .eq("project_id", project.id)
             .eq("id", r.id),
     ),
   );
@@ -151,20 +153,25 @@ export async function ruimteVerwijderen(
   _vorige: ActieStatus,
   formData: FormData,
 ): Promise<ActieStatus> {
-  const { fout } = await bewerkbaarProject();
+  const { project, fout } = await bewerkbaarProject();
   if (fout) return { fout };
   const id = tekst(formData, "id");
   const supabase = await createClient();
   const { count } = await supabase
     .from("room_allocations")
     .select("id", { count: "exact", head: true })
+    .eq("project_id", project.id)
     .eq("room_id", id);
   if ((count ?? 0) > 0) {
     return {
       fout: "Aan deze ruimte zijn kosten gekoppeld. Haal die koppeling eerst weg.",
     };
   }
-  const { error } = await supabase.from("rooms").delete().eq("id", id);
+  const { error } = await supabase
+    .from("rooms")
+    .delete()
+    .eq("project_id", project.id)
+    .eq("id", id);
   if (error) return { fout: dbFout(error) };
   vernieuw();
   return { succes: "Ruimte verwijderd." };

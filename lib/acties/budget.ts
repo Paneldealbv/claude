@@ -132,7 +132,7 @@ export async function categorieHernoemen(
   _vorige: ActieStatus,
   formData: FormData,
 ): Promise<ActieStatus> {
-  const { fout } = await bewerkbaarProject();
+  const { project, fout } = await bewerkbaarProject();
   if (fout) return { fout };
   const naam = naamSchema.safeParse(formData.get("naam"));
   if (!naam.success)
@@ -142,6 +142,7 @@ export async function categorieHernoemen(
   const { error } = await supabase
     .from("categories")
     .update({ name: naam.data })
+    .eq("project_id", project.id)
     .eq("id", tekst(formData, "id"));
   if (error) return { fout: dbFout(error) };
   vernieuw();
@@ -158,6 +159,7 @@ export async function categorieVerplaatsen(formData: FormData): Promise<void> {
   const { data: huidige } = await supabase
     .from("categories")
     .select("parent_id")
+    .eq("project_id", project.id)
     .eq("id", id)
     .single();
   if (!huidige) return;
@@ -187,6 +189,7 @@ export async function categorieVerplaatsen(formData: FormData): Promise<void> {
         : supabase
             .from("categories")
             .update({ sort_order: i + 1 })
+            .eq("project_id", project.id)
             .eq("id", b.id),
     ),
   );
@@ -319,10 +322,14 @@ export async function budgetRegelOpslaan(
 export async function budgetRegelVerwijderen(
   formData: FormData,
 ): Promise<void> {
-  const { fout } = await bewerkbaarProject();
+  const { project, fout } = await bewerkbaarProject();
   if (fout) return;
   const supabase = await createClient();
-  await supabase.from("budget_lines").delete().eq("id", tekst(formData, "id"));
+  await supabase
+    .from("budget_lines")
+    .delete()
+    .eq("project_id", project.id)
+    .eq("id", tekst(formData, "id"));
   vernieuw();
 }
 

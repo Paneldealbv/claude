@@ -24,7 +24,15 @@ export async function siteUrl(): Promise<string> {
  */
 export function veiligPad(pad: unknown, standaard = "/dashboard"): string {
   if (typeof pad !== "string") return standaard;
-  if (!pad.startsWith("/") || pad.startsWith("//") || pad.startsWith("/\\")) {
+  // Browsers negeren tabs en regeleinden in een URL ("/\t/site.nl" wordt
+  // "//site.nl"); backslashes gelden als "/". Zulke paden nooit toestaan.
+  if (/[\u0000-\u001f\u007f\\]/.test(pad)) return standaard;
+  if (!pad.startsWith("/") || pad.startsWith("//")) return standaard;
+  // Laatste controle: het pad moet op de eigen site blijven.
+  try {
+    const basis = "https://eigen.invalid";
+    if (new URL(pad, basis).origin !== basis) return standaard;
+  } catch {
     return standaard;
   }
   return pad;

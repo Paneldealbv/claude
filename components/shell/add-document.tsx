@@ -119,7 +119,7 @@ export function AddDocumentProvider({ children }: { children: ReactNode }) {
                     {o.tekst}
                   </span>
                   {o.fase && (
-                    <span className="text-subtle mt-1.5 block text-[11px] font-medium tracking-wide uppercase">
+                    <span className="text-muted mt-1.5 block text-[11px] font-medium tracking-wide uppercase">
                       Beschikbaar in {o.fase}
                     </span>
                   )}

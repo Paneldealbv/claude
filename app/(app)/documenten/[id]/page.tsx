@@ -423,7 +423,7 @@ export default async function DocumentPagina({
               </div>
             </Card>
           )}
-          <p className="text-subtle px-1 text-xs">
+          <p className="text-muted px-1 text-xs">
             Totaal {formatEuro(cijfers.totaal, heel)} ·{" "}
             {DOCUMENT_TYPE[document.type].tekst.toLowerCase()} ·{" "}
             {document.bron === "ai"
