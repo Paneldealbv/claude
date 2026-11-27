@@ -19,7 +19,11 @@ import { Melding } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill, type StatusSoort } from "@/components/ui/status";
 import { aiBeschikbaar } from "@/lib/ai/herkennen";
-import { letOpPerVeld, voorstelNaarInvoer } from "@/lib/ai/voorstel";
+import {
+  letOpPerVeld,
+  splitsFout,
+  voorstelNaarInvoer,
+} from "@/lib/ai/voorstel";
 import { getActiefProject } from "@/lib/auth";
 import { vandaagIso } from "@/lib/datum";
 import { bestandMetLink } from "@/lib/data/bestanden";
@@ -91,6 +95,7 @@ export default async function VoorstelPagina({
       };
     }
   }
+  const fout = splitsFout(voorstel.fout);
   const kanInvoeren =
     keuzes.categorieen.length > 0 || keuzes.contracten.length > 0;
 
@@ -144,8 +149,18 @@ export default async function VoorstelPagina({
                 <Melding soort="fout">
                   {voorstel.vastgelopen
                     ? "Het uitlezen is afgebroken (het duurde te lang)."
-                    : (voorstel.fout ?? "Het uitlezen is niet gelukt.")}
+                    : (fout.fout ?? "Het uitlezen is niet gelukt.")}
                 </Melding>
+                {fout.detail && (
+                  <details className="text-muted text-xs">
+                    <summary className="cursor-pointer select-none">
+                      Technische details
+                    </summary>
+                    <p className="mt-1.5 font-mono break-words">
+                      {fout.detail}
+                    </p>
+                  </details>
+                )}
                 {!lezer && (
                   <div className="flex flex-wrap items-center gap-3">
                     {aiBeschikbaar() && <OpnieuwUitlezen id={voorstel.id} />}

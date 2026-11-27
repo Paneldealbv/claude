@@ -9,7 +9,7 @@ import {
   aiBeschikbaar,
   leesDocument,
 } from "@/lib/ai/herkennen";
-import { isVastgelopen, zuiverIds } from "@/lib/ai/voorstel";
+import { foutMetDetail, isVastgelopen, zuiverIds } from "@/lib/ai/voorstel";
 import { vandaagIso } from "@/lib/datum";
 import { documentKeuzes, documentOverzicht } from "@/lib/data/documenten";
 import { laadLeveranciers } from "@/lib/data/offertes";
@@ -57,7 +57,10 @@ async function verwerk(
     console.error("[ai] verwerken mislukt:", fout);
     await bijwerken({
       status: "mislukt",
-      error: "Het uitlezen is mislukt. Probeer het opnieuw.",
+      error: foutMetDetail(
+        "Het uitlezen is mislukt. Probeer het opnieuw.",
+        fout instanceof Error ? fout.message : null,
+      ),
     });
   }
 }
@@ -129,7 +132,10 @@ async function uitlezen(
     },
   );
   if (!uitkomst.ok) {
-    await bijwerken({ status: "mislukt", error: uitkomst.fout });
+    await bijwerken({
+      status: "mislukt",
+      error: foutMetDetail(uitkomst.fout, uitkomst.detail),
+    });
     return;
   }
 

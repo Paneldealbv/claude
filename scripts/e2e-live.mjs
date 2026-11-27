@@ -2155,7 +2155,14 @@ async function main() {
         .waitFor({ timeout: 20000 });
       if ((await pA.getByRole("heading", { name: "Gegevens" }).count()) === 0) {
         const melding = await pA.getByRole("alert").first().innerText();
-        ok(false, `echte herkenning mislukt na ${duur} s: ${melding}`);
+        const details = pA.locator("details");
+        const detail = (await details.count())
+          ? normaal(await details.first().textContent())
+          : "";
+        ok(
+          false,
+          `echte herkenning mislukt na ${duur} s: ${melding}${detail ? ` (${detail})` : ""}`,
+        );
       }
       if (SCREENSHOTS)
         await pA.screenshot({

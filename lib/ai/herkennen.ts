@@ -102,7 +102,25 @@ function contextTekst(ctx: HerkenContext) {
 
 export type HerkenUitkomst =
   | { ok: true; herkenning: Herkenning; model: string }
-  | { ok: false; fout: string };
+  /** fout: voor de gebruiker; detail: technische melding van de API. */
+  | { ok: false; fout: string; detail?: string };
+
+/** Technische melding van de API (status, soort en tekst), zonder sleutels. */
+function technisch(fout: unknown): string | undefined {
+  if (fout instanceof Anthropic.APIError) {
+    const body = fout.error as
+      { error?: { type?: string; message?: string } } | undefined;
+    return [
+      fout.status,
+      body?.error?.type,
+      body?.error?.message ?? fout.message,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+      .slice(0, 800);
+  }
+  return fout instanceof Error ? fout.message.slice(0, 800) : undefined;
+}
 
 /** Leest één document (PDF of foto) uit. Bedoeld voor serveracties. */
 export async function leesDocument(
@@ -126,40 +144,62 @@ export async function leesDocument(
 
   // Eén poging binnen de tijd van een serverfunctie (Vercel: max. 60 s).
   const client = new Anthropic({ timeout: 55_000, maxRetries: 0 });
-  try {
-    const bericht = await client.beta.messages.parse({
-      model: AI_MODEL,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: {
-        effort: "medium",
-        format: betaZodOutputFormat(HerkenningSchema),
+  const aanvraag = {
+    model: AI_MODEL,
+    max_tokens: 16000,
+    output_config: {
+      effort: "medium" as const,
+      format: betaZodOutputFormat(HerkenningSchema),
+    },
+    system: SYSTEEM,
+    messages: [
+      {
+        role: "user" as const,
+        content: [blok, { type: "text" as const, text: contextTekst(ctx) }],
       },
-      system: SYSTEEM,
-      messages: [
-        {
-          role: "user",
-          content: [blok, { type: "text", text: contextTekst(ctx) }],
-        },
-      ],
-    });
+    ],
+  };
+  try {
+    let bericht;
+    try {
+      // Weigert het model (veiligheidsfilter), dan probeert de API zelf
+      // een ander model.
+      bericht = await client.beta.messages.parse({
+        ...aanvraag,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+      });
+    } catch (fout) {
+      // Niet elke sleutel of elk account kent die optie: dan zonder.
+      if (
+        fout instanceof Anthropic.BadRequestError &&
+        /fallback|beta/i.test(technisch(fout) ?? "")
+      ) {
+        console.warn("[ai] zonder fallbacks opnieuw:", technisch(fout));
+        bericht = await client.beta.messages.parse(aanvraag);
+      } else {
+        throw fout;
+      }
+    }
     if (bericht.stop_reason === "refusal") {
       return {
         ok: false,
         fout: "De AI kon dit document niet verwerken. Voer het zelf in.",
+        detail: "stop_reason: refusal",
       };
     }
     if (bericht.stop_reason === "max_tokens") {
       return {
         ok: false,
         fout: "Het document is te lang om in één keer uit te lezen. Voer het zelf in.",
+        detail: "stop_reason: max_tokens",
       };
     }
     if (!bericht.parsed_output) {
       return {
         ok: false,
         fout: "Het antwoord van de AI kon niet worden gelezen. Probeer het opnieuw.",
+        detail: `stop_reason: ${bericht.stop_reason}; geen geldig antwoord volgens het schema`,
       };
     }
     return {
@@ -169,32 +209,38 @@ export async function leesDocument(
     };
   } catch (fout) {
     console.error("[ai] uitlezen mislukt:", fout);
+    const detail = technisch(fout);
     if (fout instanceof Anthropic.AuthenticationError) {
       return {
         ok: false,
+        detail,
         fout: "De API-sleutel voor de AI wordt geweigerd. Controleer de instelling.",
       };
     }
     if (fout instanceof Anthropic.RateLimitError) {
       return {
         ok: false,
+        detail,
         fout: "De AI is even te druk. Probeer het over een minuut opnieuw.",
       };
     }
     if (fout instanceof Anthropic.APIConnectionTimeoutError) {
       return {
         ok: false,
+        detail,
         fout: "Het uitlezen duurde te lang. Probeer het opnieuw.",
       };
     }
     if (fout instanceof Anthropic.BadRequestError) {
       return {
         ok: false,
+        detail,
         fout: "Dit bestand kon de AI niet lezen. Probeer een duidelijkere foto of een PDF.",
       };
     }
     return {
       ok: false,
+      detail,
       fout: "Het uitlezen is mislukt. Probeer het opnieuw.",
     };
   }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Herkenning } from "./schema";
 import {
+  foutMetDetail,
   isVastgelopen,
   letOpPerVeld,
+  splitsFout,
   voorstelNaarInvoer,
   zuiverIds,
   type Geldig,
@@ -198,5 +200,24 @@ describe("isVastgelopen", () => {
     expect(isVastgelopen("te_controleren", "2026-11-26T11:00:00Z", nu)).toBe(
       false,
     );
+  });
+});
+
+describe("foutMetDetail / splitsFout", () => {
+  it("bewaart de technische melding apart van de melding voor de gebruiker", () => {
+    const opgeslagen = foutMetDetail(
+      "Dit bestand kon de AI niet lezen.",
+      "400 · invalid_request_error · iets klopt niet",
+    );
+    expect(splitsFout(opgeslagen)).toEqual({
+      fout: "Dit bestand kon de AI niet lezen.",
+      detail: "400 · invalid_request_error · iets klopt niet",
+    });
+    expect(splitsFout("Alleen een melding.")).toEqual({
+      fout: "Alleen een melding.",
+      detail: null,
+    });
+    expect(splitsFout(null)).toEqual({ fout: null, detail: null });
+    expect(foutMetDetail("x".repeat(1990), "y".repeat(100))).toHaveLength(2000);
   });
 });

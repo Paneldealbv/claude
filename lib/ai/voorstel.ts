@@ -210,3 +210,19 @@ export function isVastgelopen(
     nu - new Date(bijgewerkt).getTime() > VASTGELOPEN_NA_MS
   );
 }
+
+const TECHNISCH = "\n\nTechnisch: ";
+
+/** Foutmelding voor de gebruiker plus (los te tonen) technische melding. */
+export function foutMetDetail(fout: string, detail?: string | null) {
+  return (detail ? `${fout}${TECHNISCH}${detail}` : fout).slice(0, 2000);
+}
+
+export function splitsFout(opgeslagen: string | null): {
+  fout: string | null;
+  detail: string | null;
+} {
+  if (!opgeslagen) return { fout: null, detail: null };
+  const [fout, ...rest] = opgeslagen.split(TECHNISCH);
+  return { fout, detail: rest.length ? rest.join(TECHNISCH) : null };
+}
