@@ -5,7 +5,14 @@ import type { PostgrestError } from "@supabase/supabase-js";
  * geschreven (zie supabase/migrations). Alle andere fouten worden algemeen
  * gehouden, zodat er geen technische details naar de browser lekken.
  */
-const EIGEN_CODES = new Set(["42501", "22023", "23505", "P0002", "23514"]);
+const EIGEN_CODES = new Set([
+  "42501",
+  "22023",
+  "23503",
+  "23505",
+  "P0002",
+  "23514",
+]);
 const TECHNISCH =
   /violates|permission denied|relation|column|constraint|syntax/i;
 

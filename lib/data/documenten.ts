@@ -167,9 +167,16 @@ export const laadBetaalbronnen = cache(async (projectId: string) => {
     .order("created_at");
   const rijen = data ?? [];
   const heeftDelen = new Set(rijen.map((r) => r.parent_source_id));
+  const naam = new Map(rijen.map((r) => [r.id, r.name]));
+  // Betalen uit een deel (bouwdepot) of uit een bron zonder delen.
   return rijen
     .filter((r) => !heeftDelen.has(r.id))
-    .map((r) => ({ id: r.id, naam: r.name }));
+    .map((r) => ({
+      id: r.id,
+      naam: r.parent_source_id
+        ? `${r.name} (${naam.get(r.parent_source_id) ?? "hypotheek"})`
+        : r.name,
+    }));
 });
 
 /**

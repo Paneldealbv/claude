@@ -5,6 +5,7 @@ import { DocumentLijst } from "@/components/documenten/lijst";
 import { Card, CardHeader } from "@/components/ui/card";
 import { knopKlassen } from "@/components/ui/knop";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tegel } from "@/components/ui/tegel";
 import { getActiefProject } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { documentOverzicht, type DocumentItem } from "@/lib/data/documenten";
@@ -65,38 +66,6 @@ const SOORTFILTERS = [
     past: (d: DocumentItem) => d.type === "creditnota",
   },
 ] as const;
-
-function Tegel({
-  label,
-  waarde,
-  extra,
-  kritiek,
-}: {
-  label: string;
-  waarde: string;
-  extra?: string;
-  kritiek?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "border-border bg-surface shadow-card rounded-2xl border p-4",
-        kritiek && "border-critical/40",
-      )}
-    >
-      <p className="text-muted text-xs">{label}</p>
-      <p
-        className={cn(
-          "mt-1 text-xl font-semibold tracking-tight whitespace-nowrap",
-          kritiek && "text-critical",
-        )}
-      >
-        {waarde}
-      </p>
-      {extra && <p className="text-muted mt-1 text-xs">{extra}</p>}
-    </div>
-  );
-}
 
 export default async function DocumentenPagina({
   searchParams,

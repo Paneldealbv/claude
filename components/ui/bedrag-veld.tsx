@@ -20,7 +20,7 @@ export function BedragVeld({
   disabled,
   onWaarde,
 }: {
-  label: string;
+  label: ReactNode;
   naam: string;
   /** In centen. */
   defaultValue?: number | null;

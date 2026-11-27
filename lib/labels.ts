@@ -49,3 +49,35 @@ export const BETAALSTATUS = {
   betaald: { tekst: "Betaald", soort: "positief" },
   te_laat: { tekst: "Te laat", soort: "kritiek" },
 } as const satisfies Record<string, { tekst: string; soort: Soort }>;
+
+export const BRON_TYPE = {
+  eigen_geld: { tekst: "Eigen geld" },
+  hypotheek: { tekst: "Hypotheek" },
+  schenking: { tekst: "Schenking" },
+  lening: { tekst: "Lening" },
+  overig: { tekst: "Overig" },
+  bouwdepot: { tekst: "Bouwdepot" },
+  overige_hypotheekruimte: { tekst: "Overige hypotheekruimte" },
+} as const;
+
+export type BronSoort = keyof typeof BRON_TYPE;
+
+/** Bronnen die je zelf toevoegt; bouwdepot en overige ruimte zijn delen. */
+export const HOOFDBRONNEN = [
+  "eigen_geld",
+  "hypotheek",
+  "schenking",
+  "lening",
+  "overig",
+] as const satisfies readonly BronSoort[];
+
+export type HoofdbronSoort = (typeof HOOFDBRONNEN)[number];
+
+export const STATUS_DECLARATIE = {
+  concept: { tekst: "Concept", soort: "neutraal" },
+  ingediend: { tekst: "Ingediend", soort: "waarschuwing" },
+  uitbetaald: { tekst: "Uitbetaald", soort: "positief" },
+  afgewezen: { tekst: "Afgewezen", soort: "kritiek" },
+} as const satisfies Record<string, { tekst: string; soort: Soort }>;
+
+export type DeclaratieStatus = keyof typeof STATUS_DECLARATIE;

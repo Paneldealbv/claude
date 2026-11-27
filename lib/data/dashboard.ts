@@ -218,6 +218,50 @@ export const laadDashboard = cache(async (projectId: string) => {
       case "document_verwijderd":
         wat = "heeft een document verwijderd";
         break;
+      case "financiering_toegevoegd":
+        wat = `heeft ${String(c.naam ?? "een bron")} aan de financiering toegevoegd`;
+        bedrag = typeof c.bedrag === "number" ? c.bedrag : null;
+        href = "/financiering";
+        break;
+      case "financiering_gewijzigd":
+        wat = `heeft ${String(c.naam ?? "de financiering")} bijgewerkt`;
+        href = "/financiering";
+        break;
+      case "financiering_verwijderd":
+        wat = `heeft ${String(c.naam ?? "een bron")} uit de financiering verwijderd`;
+        href = "/financiering";
+        break;
+      case "declaratie_opgeslagen":
+        wat = "heeft een declaratie voor het bouwdepot klaargezet";
+        bedrag = typeof c.bedrag === "number" ? c.bedrag : null;
+        href = `/financiering/declaraties/${id}`;
+        break;
+      case "declaratie_ingediend":
+        wat =
+          `heeft declaratie ${String(c.nummer ?? "")} bij de bank ingediend`.replace(
+            /\s+/g,
+            " ",
+          );
+        bedrag = typeof c.bedrag === "number" ? c.bedrag : null;
+        href = `/financiering/declaraties/${id}`;
+        break;
+      case "declaratie_uitbetaald":
+        wat =
+          `heeft declaratie ${String(c.nummer ?? "")} als uitbetaald vastgelegd`.replace(
+            /\s+/g,
+            " ",
+          );
+        bedrag = typeof c.bedrag === "number" ? c.bedrag : null;
+        href = `/financiering/declaraties/${id}`;
+        break;
+      case "declaratie_afgewezen":
+        wat = "heeft een declaratie als afgewezen gemarkeerd";
+        href = `/financiering/declaraties/${id}`;
+        break;
+      case "declaratie_concept":
+        wat = "heeft een declaratie teruggezet naar concept";
+        href = `/financiering/declaraties/${id}`;
+        break;
     }
     return {
       id: String(a.id),

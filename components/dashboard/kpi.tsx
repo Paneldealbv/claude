@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 import { formatEuro, formatEuroVerschil } from "@/lib/format";
@@ -174,8 +175,14 @@ export function HeroPrognose({
         {formatEuro(prognose, { centen: false })}
       </p>
       <p className="text-muted relative mt-3 max-w-sm text-sm leading-relaxed">
-        Wat de woning naar verwachting gaat kosten. Zodra je financiering is
-        ingevuld (fase 9), zie je hier hoeveel ruimte je overhoudt.
+        Wat de woning naar verwachting gaat kosten. Zodra je{" "}
+        <Link
+          href="/financiering"
+          className="text-accent-ink font-medium hover:underline"
+        >
+          financiering
+        </Link>{" "}
+        is ingevuld, zie je hier hoeveel ruimte je overhoudt.
       </p>
       <div className="relative mt-auto pt-6">
         <div

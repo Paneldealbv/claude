@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui/card";
 import type { BronResultaat, FinancieringResultaat } from "@/lib/finance";
 import { formatEuro } from "@/lib/format";
@@ -33,8 +34,15 @@ export function FinancieringKaart({ data }: { data: FinancieringResultaat }) {
           description="Eigen geld, hypotheek en bouwdepot"
         />
         <p className="text-muted px-5 pt-3 pb-5 text-sm sm:px-6">
-          Nog geen financiering vastgelegd. Dat komt in fase 9; daarna zie je
-          hier waaruit je betaalt en hoeveel er in het bouwdepot over is.
+          Nog geen financiering vastgelegd.{" "}
+          <Link
+            href="/financiering"
+            className="text-accent-ink font-medium hover:underline"
+          >
+            Leg je hypotheek en eigen geld vast
+          </Link>
+          ; daarna zie je hier waaruit je betaalt en hoeveel er in het bouwdepot
+          over is.
         </p>
       </Card>
     );
