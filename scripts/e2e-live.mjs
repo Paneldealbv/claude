@@ -231,8 +231,14 @@ async function main() {
       await p.waitForURL((u) => !u.pathname.startsWith("/inloggen"), {
         timeout: 20000,
       });
-      // Ruim: vlak na een deploy kunnen de eerste serverfuncties traag starten.
-      await p.waitForLoadState("networkidle", { timeout: 60000 });
+      // Vlak na een deploy kan het allereerste verzoek naar een testversie op
+      // Vercel lang blijven hangen. De volgende stappen wachten zelf op wat ze
+      // nodig hebben, dus hier niet afbreken.
+      await p
+        .waitForLoadState("networkidle", { timeout: 30000 })
+        .catch(() =>
+          console.log("  (pagina nog niet helemaal rustig; verder)"),
+        );
       return p;
     };
 
