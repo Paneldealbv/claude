@@ -449,6 +449,34 @@ Keuzes die bij het programmeren concreet zijn gemaakt:
 - Het dashboard toont zodra er financiering is de financiële ruimte als
   hoofdgetal; de activiteit noemt nieuwe bronnen en declaraties.
 
+### 3.16 Afronding (vastgelegd in fase 10)
+
+- **Installeerbare app (PWA)**: `app/manifest.ts` (naam, start op het
+  dashboard, snelkoppelingen "Bon fotograferen", "Factuur uploaden" en "Te
+  controleren"), iconen uit het logo (`scripts/maak-iconen.mjs`: 192/512,
+  maskable, Apple). Geen service worker: financiële gegevens worden bewust
+  niet offline bewaard; zonder verbinding toont de app een melding.
+- **Laden en fouten**: een laadscherm tijdens het ophalen (`loading.tsx`), een
+  Nederlandse foutpagina met "Opnieuw proberen" en een 404-pagina.
+- **Toegankelijkheid**: axe (WCAG 2.1 AA) zonder bevindingen op alle pagina's,
+  licht en donker, desktop en mobiel; "Naar de inhoud" als eerste
+  toetsenbordstop; voldoende contrast voor alle tekst.
+- **Beveiliging**:
+  - Content Security Policy met een nieuwe nonce per verzoek (`lib/csp.ts`,
+    `proxy.ts`): geen inline scripts of `eval`, afbeeldingen/PDF's/uploads
+    alleen van de eigen Supabase, geen iframes van andere sites
+    (`frame-ancestors 'none'`). Stijlen mogen inline (grafieken).
+  - Verder: `X-Frame-Options`, `nosniff`, referrer-beleid,
+    `Permissions-Policy`, HSTS en `Cross-Origin-Opener-Policy`.
+  - Doorverwijzingen na inloggen alleen naar de eigen site, ook met trucs als
+    tabs of backslashes in de link.
+  - Elke schrijfactie zoekt binnen het actieve project (naast RLS).
+  - Supabase-adviseurs nagelopen: de functies met verhoogde rechten
+    (project aanmaken, uitnodigen) zijn bewust en controleren zelf de rechten;
+    ontbrekende indexen op foreign keys zijn bij deze hoeveelheden gegevens
+    niet merkbaar. Geen geheimen in de code of de git-geschiedenis.
+  - Zoekmachines: `robots.txt` en `noindex`.
+
 ---
 
 ## 4. Database-tabellen
@@ -658,4 +686,4 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 7. Dashboard en rapportages ✓           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
 | 8. AI-documentherkenning ✓              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
 | 9. Financiering ✓                       | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
-| 10. Afronding                           | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
+| 10. Afronding ✓                         | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein (zodra gekozen)                                        |

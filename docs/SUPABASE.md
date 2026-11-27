@@ -138,6 +138,17 @@ Productie: `https://nieuwbouw-dashboard-paneldeal.vercel.app` (vanaf `main`).
 5. Het productie-adres als Site URL in Supabase Auth zetten:
    `SITE_URLS=https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
 
+### Eigen domein
+
+1. Vercel → project → **Settings → Domains → Add**: bijvoorbeeld
+   `nieuwbouw.jouwdomein.nl`. Vercel toont welk DNS-record je bij je
+   domeinregistrar zet (meestal een CNAME naar `cname.vercel-dns.com`).
+2. Zodra het domein actief is: in Vercel `NEXT_PUBLIC_SITE_URL` op
+   `https://nieuwbouw.jouwdomein.nl` zetten (Production) en opnieuw deployen.
+3. Het domein toevoegen aan Supabase Auth (links in e-mails):
+   `SITE_URLS=https://nieuwbouw.jouwdomein.nl,https://nieuwbouw-dashboard-paneldeal.vercel.app,http://localhost:3000 npm run supabase -- auth`
+4. Controle: `APP_URL=https://nieuwbouw.jouwdomein.nl npm run test:e2e`.
+
 ### AI-herkenning aanzetten
 
 1. Maak een API-sleutel aan op console.anthropic.com (**API Keys → Create

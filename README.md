@@ -19,16 +19,18 @@ npm run dev                  # http://localhost:3000
 
 ## Scripts
 
-| Commando            | Doel                                                        |
-| ------------------- | ----------------------------------------------------------- |
-| `npm run dev`       | Ontwikkelserver                                             |
-| `npm run build`     | Productiebuild                                              |
-| `npm run lint`      | ESLint                                                      |
-| `npm run typecheck` | TypeScript-controle                                         |
-| `npm test`          | Unit tests (Vitest)                                         |
-| `npm run test:db`   | Migraties + beveiligingstests op tijdelijke lokale Postgres |
-| `npm run supabase`  | Beheer van het Supabase-project (zie docs/SUPABASE.md)      |
-| `npm run format`    | Code opmaken met Prettier                                   |
+| Commando                       | Doel                                                        |
+| ------------------------------ | ----------------------------------------------------------- |
+| `npm run dev`                  | Ontwikkelserver                                             |
+| `npm run build`                | Productiebuild                                              |
+| `npm run lint`                 | ESLint                                                      |
+| `npm run typecheck`            | TypeScript-controle                                         |
+| `npm test`                     | Unit tests (Vitest)                                         |
+| `npm run test:db`              | Migraties + beveiligingstests op tijdelijke lokale Postgres |
+| `npm run supabase`             | Beheer van het Supabase-project (zie docs/SUPABASE.md)      |
+| `npm run format`               | Code opmaken met Prettier                                   |
+| `npm run test:e2e`             | End-to-end test tegen Supabase (zie docs/SUPABASE.md)       |
+| `node scripts/maak-iconen.mjs` | App-iconen opnieuw maken uit het logo                       |
 
 ## Afspraken
 

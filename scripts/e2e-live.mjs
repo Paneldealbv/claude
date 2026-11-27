@@ -16,6 +16,9 @@
  *   financiering (fase 9): hypotheek met bouwdepot, eigen geld, betalingen
  *   koppelen, declaratie indienen en uitbetalen (ook voorgeschoten bedragen),
  *   afwijzen en verwijderen, bouwdepot aanpassen
+ *   afronding (fase 10): beveiligingsheaders met CSP-nonce, geen enkele
+ *   CSP-overtreding tijdens de hele test, installeerbare app (manifest,
+ *   iconen), 404-pagina, toegankelijkheid (axe) en "naar de inhoud"
  *   C (geen toegang) ziet niets en kan niets wijzigen, ook geen bestanden
  *   niet ingelogd → geen toegang
  * Daarna worden project en testaccounts volledig verwijderd en wordt
@@ -31,6 +34,7 @@
  */
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { createClient } from "@supabase/supabase-js";
 
@@ -216,6 +220,39 @@ async function main() {
     }
     ok(ids.length === 3, "drie testaccounts aangemaakt (e-mail bevestigd)");
 
+    // Elke melding van de Content Security Policy is een fout (behalve de
+    // Vercel-werkbalk op testversies, die de CSP terecht tegenhoudt).
+    const cspFouten = [];
+    const volgCsp = (p) =>
+      p.on("console", (m) => {
+        const t = m.text();
+        if (/Content Security Policy/i.test(t) && !/vercel\.live/.test(t)) {
+          cspFouten.push(t.slice(0, 200));
+        }
+      });
+
+    // Na een navigatie toont de app eerst een laadscherm (loading.tsx); de
+    // inhoud volgt via streaming. Pas verder als het laadscherm weg is.
+    const wachtOpInhoud = (p) => {
+      const klaar = () =>
+        p
+          .locator("[data-laden]")
+          .first()
+          .waitFor({ state: "detached", timeout: 30000 })
+          .catch(() => {});
+      const goto = p.goto.bind(p);
+      p.goto = async (...args) => {
+        const r = await goto(...args);
+        await klaar();
+        return r;
+      };
+      const naarUrl = p.waitForURL.bind(p);
+      p.waitForURL = async (...args) => {
+        await naarUrl(...args);
+        await klaar();
+      };
+    };
+
     // Online adres testen vanachter een proxy: de browser via die proxy laten gaan.
     const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
     const lokaal = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(APP);
@@ -227,6 +264,8 @@ async function main() {
         viewport: { width: 1440, height: 900 },
       });
       const p = await ctx.newPage();
+      volgCsp(p);
+      wachtOpInhoud(p);
       await p.goto(`${APP}/inloggen`);
       await p.getByLabel("E-mailadres").fill(acc.email);
       await p.getByLabel("Wachtwoord", { exact: true }).fill(acc.wachtwoord);
@@ -2531,6 +2570,107 @@ async function main() {
       "C kan geen financiering toevoegen aan het project",
     );
 
+    // --- Afronding (fase 10): beveiliging, app en toegankelijkheid -----------
+    console.log("→ Beveiliging, app en toegankelijkheid");
+    const kop1 = await fetch(`${APP}/inloggen`);
+    const kop2 = await fetch(`${APP}/inloggen`);
+    const csp1 = kop1.headers.get("content-security-policy") ?? "";
+    const csp2 = kop2.headers.get("content-security-policy") ?? "";
+    const scriptSrc =
+      csp1.split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+    const nonce = (c) => c.match(/'nonce-([^']+)'/)?.[1];
+    ok(
+      nonce(csp1) &&
+        nonce(csp1) !== nonce(csp2) &&
+        !scriptSrc.includes("unsafe-inline") &&
+        !scriptSrc.includes("unsafe-eval") &&
+        csp1.includes("frame-ancestors 'none'") &&
+        csp1.includes("object-src 'none'") &&
+        kop1.headers.get("x-frame-options") === "DENY" &&
+        kop1.headers.get("x-content-type-options") === "nosniff" &&
+        kop1.headers.get("referrer-policy") ===
+          "strict-origin-when-cross-origin" &&
+        kop1.headers.get("cross-origin-opener-policy") === "same-origin",
+      "beveiligingsheaders: CSP met een nieuwe nonce per verzoek (geen inline scripts of eval), geen iframes, nosniff, referrer-beleid",
+    );
+    const manifest = await (await fetch(`${APP}/manifest.webmanifest`)).json();
+    const robots = await (await fetch(`${APP}/robots.txt`)).text();
+    const icoon = await fetch(`${APP}/icon-512.png`);
+    ok(
+      manifest.name === "Nieuwbouw Dashboard" &&
+        manifest.display === "standalone" &&
+        manifest.start_url === "/dashboard" &&
+        manifest.icons.some((i) => i.purpose === "maskable") &&
+        icoon.status === 200 &&
+        icoon.headers.get("content-type") === "image/png" &&
+        /Disallow: \//.test(robots),
+      "app-manifest (zonder inloggen bereikbaar), iconen en robots.txt (niet indexeren)",
+    );
+    await pA.goto(`${APP}/dashboard`);
+    const cdp = await pA.context().newCDPSession(pA);
+    const { installabilityErrors } = await cdp.send(
+      "Page.getInstallabilityErrors",
+    );
+    ok(
+      installabilityErrors.length === 0,
+      "Chrome: de app is installeerbaar (geen installatiefouten)",
+    );
+    await pA.keyboard.press("Tab");
+    ok(
+      (await pA.evaluate(() => document.activeElement?.textContent?.trim())) ===
+        "Naar de inhoud",
+      'eerste Tab op de pagina: "Naar de inhoud"',
+    );
+    const nietGevonden = await pA.goto(`${APP}/bestaat-niet`);
+    ok(
+      nietGevonden.status() === 404 &&
+        (await pA.getByRole("heading", { name: "Niet gevonden" }).count()) ===
+          1,
+      "onbekend adres: Nederlandse 404-pagina",
+    );
+
+    const axeBron = readFileSync(
+      require.resolve("axe-core/axe.min.js"),
+      "utf8",
+    );
+    const toegankelijkheid = async (pad) => {
+      await pA.goto(`${APP}${pad}`);
+      await pA.waitForLoadState("networkidle").catch(() => {});
+      // Via evaluate, niet als <script>: de CSP houdt losse scripts tegen.
+      await pA.evaluate(axeBron);
+      return pA.evaluate(async () =>
+        (
+          await window.axe.run(document, {
+            runOnly: {
+              type: "tag",
+              values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+            },
+          })
+        ).violations.map((v) => `${v.id} (${v.nodes.length})`),
+      );
+    };
+    const paginasAxe = [
+      "/dashboard",
+      "/budget",
+      `/budget/${keukenId}`,
+      "/documenten",
+      `/documenten/${termijnFactuur}`,
+      `/contracten/${contractId}`,
+      "/financiering",
+      `/financiering/declaraties/${declaratie}`,
+      "/te-controleren",
+      "/rapportages",
+    ];
+    const bevindingen = [];
+    for (const pad of paginasAxe) {
+      const v = await toegankelijkheid(pad);
+      if (v.length) bevindingen.push(`${pad}: ${v.join(", ")}`);
+    }
+    ok(
+      bevindingen.length === 0,
+      `toegankelijkheid (axe, WCAG 2.1 AA): geen bevindingen op ${paginasAxe.length} pagina's vol gegevens${bevindingen.length ? ` — ${bevindingen.join(" | ")}` : ""}`,
+    );
+
     const anon = createClient(URL_SB, publishable, geenSessie);
     const anonLees = await anon.from("projects").select("id");
     ok(
@@ -2539,10 +2679,15 @@ async function main() {
     );
 
     const pAnon = await (await browser.newContext()).newPage();
+    volgCsp(pAnon);
     await pAnon.goto(`${APP}/dashboard`);
     ok(
       new URL(pAnon.url()).pathname === "/inloggen",
       "niet ingelogd: app stuurt naar inloggen",
+    );
+    ok(
+      cspFouten.length === 0,
+      `geen enkele CSP-overtreding tijdens de hele test${cspFouten.length ? ` — ${cspFouten.slice(0, 3).join(" | ")}` : ""}`,
     );
   } finally {
     console.log("→ Opruimen");

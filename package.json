@@ -36,6 +36,7 @@
     "@types/node": "^22.20.7",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "axe-core": "4.11.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "prettier": "^3.10.1",
