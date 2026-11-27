@@ -7,7 +7,7 @@ Fase 2. Aanvulling op [ARCHITECTUUR.md](ARCHITECTUUR.md).
 | Onderdeel                    | Waar                                             |
 | ---------------------------- | ------------------------------------------------ |
 | Database, Auth, Storage      | Supabase-project in **eu-central-1 (Frankfurt)** |
-| Databasestructuur            | `supabase/migrations/*.sql` (11 migraties)       |
+| Databasestructuur            | `supabase/migrations/*.sql` (12 migraties)       |
 | Beveiligingstests (lokaal)   | `npm run test:db` → `supabase/tests/`            |
 | Migraties en Auth instellen  | `scripts/supabase-beheer.mjs` (Management API)   |
 | Supabase-koppeling in de app | `lib/supabase/`, `proxy.ts`, `lib/auth.ts`       |

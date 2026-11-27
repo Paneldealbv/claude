@@ -13,6 +13,9 @@
  *   controlescherm met een vast testvoorstel, boeken na bevestiging,
  *   verplichte velden, voorstel verwijderen; met AI-sleutel ook een echte
  *   herkenning van een testfactuur
+ *   financiering (fase 9): hypotheek met bouwdepot, eigen geld, betalingen
+ *   koppelen, declaratie indienen en uitbetalen (ook voorgeschoten bedragen),
+ *   afwijzen en verwijderen, bouwdepot aanpassen
  *   C (geen toegang) ziet niets en kan niets wijzigen, ook geen bestanden
  *   niet ingelogd → geen toegang
  * Daarna worden project en testaccounts volledig verwijderd en wordt
@@ -2198,6 +2201,335 @@ async function main() {
         timeout: 20000,
       });
     }
+
+    // --- Financiering en bouwdepot (fase 9) ---------------------------------
+    console.log("→ Financiering en bouwdepot");
+    await pA.goto(`${APP}/financiering`);
+    await pA
+      .getByText("Nog geen financiering vastgelegd")
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("link", { name: "Hypotheek toevoegen" }).click();
+    await pA.waitForURL(/\/financiering\/nieuw/, { timeout: 20000 });
+    ok(
+      (await pA.getByRole("radio", { name: "Hypotheek" }).isChecked()) &&
+        (await pA.getByLabel("Naam", { exact: true }).inputValue()) ===
+          "Hypotheek",
+      "hypotheek toevoegen: soort en naam al ingevuld",
+    );
+    await pA.getByLabel("Geldverstrekker (optioneel)").fill("Testbank");
+    await pA.getByLabel("Hypotheekbedrag").fill("400.000");
+    await pA.getByLabel("Rente in % (optioneel)").fill("3,85");
+    await pA.getByLabel("Ingangsdatum (optioneel)").fill("01-12-2026");
+    await pA.getByLabel("Einddatum (optioneel)").fill("01-12-2056");
+    await pA.getByLabel("Bedrag in het bouwdepot (optioneel)").fill("100.000");
+    await pA.getByLabel("Bouwdepot loopt tot (optioneel)").fill("01-12-2028");
+    await pA
+      .getByText("Overige hypotheekruimte: € 300.000,00")
+      .waitFor({ timeout: 20000 });
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/financiering-hypotheek.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Bron toevoegen" }).click();
+    await pA.waitForURL((u) => u.pathname === "/financiering", {
+      timeout: 20000,
+    });
+    await pA.goto(`${APP}/financiering/nieuw?type=eigen_geld`);
+    await pA.getByLabel("Bedrag", { exact: true }).fill("95.000");
+    await pA.getByRole("button", { name: "Bron toevoegen" }).click();
+    await pA.waitForURL((u) => u.pathname === "/financiering", {
+      timeout: 20000,
+    });
+    const { data: bronnen } = await clientA
+      .from("funding_sources")
+      .select(
+        "id, type, name, amount_cents, interest_rate_bp, parent_source_id, end_date",
+      )
+      .eq("project_id", projectId);
+    const hyp = bronnen.find((b) => b.type === "hypotheek");
+    const depot = bronnen.find((b) => b.type === "bouwdepot");
+    const overig = bronnen.find((b) => b.type === "overige_hypotheekruimte");
+    const eigen = bronnen.find((b) => b.type === "eigen_geld");
+    ok(
+      bronnen.length === 4 &&
+        hyp.amount_cents === 40000000 &&
+        hyp.interest_rate_bp === 385 &&
+        depot.parent_source_id === hyp.id &&
+        depot.amount_cents === 10000000 &&
+        depot.end_date === "2028-12-01" &&
+        overig.amount_cents === 30000000 &&
+        eigen.amount_cents === 9500000,
+      "hypotheek 400.000 = bouwdepot 100.000 + overige 300.000 (3,85%), eigen geld 95.000",
+    );
+    const finTegel = async (label) =>
+      normaal(
+        await pA
+          .getByRole("region", { name: "Kerncijfers" })
+          .locator("div", { has: pA.getByText(label, { exact: true }) })
+          .last()
+          .innerText(),
+      );
+    const euroUit = (tekst) =>
+      Number((tekst.match(/€\s?([\d.]+)/)?.[1] ?? "").replaceAll(".", ""));
+    const totaalTekst = await finTegel("Totale financiering");
+    const prognose = euroUit(await finTegel("Prognose eindkosten"));
+    const ruimteLabel =
+      (await pA.getByText("Tekort", { exact: true }).count()) > 0
+        ? "Tekort"
+        : "Financiële ruimte";
+    const ruimte = euroUit(await finTegel(ruimteLabel));
+    ok(
+      totaalTekst.includes("€ 495.000") &&
+        Math.abs(495000 - prognose) === ruimte,
+      `totale financiering € 495.000 (bouwdepot niet dubbel); ${ruimteLabel.toLowerCase()} = financiering − prognose (€ ${ruimte})`,
+    );
+
+    // Betalingen van vóór de financiering: in één keer aan eigen geld koppelen.
+    const zonderBron = pA.getByRole("region", {
+      name: /betalingen? zonder bron/,
+    });
+    ok(
+      normaal(await zonderBron.innerText()).includes(
+        "3 betalingen zonder bron",
+      ),
+      "de drie eerdere betalingen staan bij 'zonder bron'",
+    );
+    await zonderBron
+      .getByLabel("Betaald uit")
+      .selectOption({ label: "Eigen geld" });
+    await zonderBron
+      .getByRole("button", { name: "Gekozen betalingen koppelen" })
+      .click();
+    await pA.getByText("3 betalingen gekoppeld.").waitFor({ timeout: 20000 });
+    const { count: losseBetalingen } = await clientA
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId)
+      .is("funding_source_id", null);
+    ok(
+      losseBetalingen === 0,
+      "alle betalingen hebben nu een bron (eigen geld)",
+    );
+
+    // Declaratie: open factuur + deel van een al zelf betaalde factuur.
+    await pA.goto(`${APP}/financiering`);
+    await pA.getByRole("link", { name: "Declaratie maken" }).click();
+    await pA.waitForURL(/\/financiering\/declaraties\/nieuw/, {
+      timeout: 20000,
+    });
+    await pA.getByRole("checkbox", { name: /Factuur TF-2026-118/ }).check();
+    await pA
+      .getByRole("checkbox", { name: /Termijnfactuur F-2026-001/ })
+      .check();
+    ok(
+      (await pA
+        .getByLabel(/Bedrag voor Termijnfactuur F-2026-001/)
+        .inputValue()) === "8.100,00",
+      "declaratie: bedrag staat standaard op wat er van de factuur kan",
+    );
+    await pA.getByLabel(/Bedrag voor Termijnfactuur F-2026-001/).fill("1.000");
+    await pA
+      .getByLabel("Nummer van de declaratie (optioneel)")
+      .fill("BD-E2E-1");
+    await pA
+      .getByText("Totaal declaratie € 1.302,50")
+      .waitFor({ timeout: 20000 });
+    if (SCREENSHOTS)
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/declaratie-nieuw.png`,
+        fullPage: true,
+      });
+    await pA.getByRole("button", { name: "Ingediend bij de bank" }).click();
+    await pA.waitForURL(uuidEind("/financiering/declaraties"), {
+      timeout: 20000,
+    });
+    const declaratie = idUitUrl(pA);
+    const statusKaart = pA.getByRole("region", { name: "Status" });
+    ok(
+      (await pA.getByText("Ingediend", { exact: true }).count()) >= 1 &&
+        normaal(
+          await pA
+            .getByRole("region", { name: "Facturen in deze declaratie" })
+            .innerText(),
+        ).includes("€ 1.302,50"),
+      "declaratie BD-E2E-1 ingediend: twee facturen, € 1.302,50",
+    );
+    await pA.goto(`${APP}/financiering`);
+    const depotKaart = pA.getByRole("region", { name: "Bouwdepot" });
+    ok(
+      normaal(await depotKaart.innerText()).includes("€ 1.302,50") &&
+        normaal(await depotKaart.innerText()).includes("€ 98.697,50"),
+      "bouwdepot: € 1.302,50 gedeclareerd, € 98.697,50 nog vrij",
+    );
+
+    // Uitbetaald door de bank.
+    await pA.goto(`${APP}/financiering/declaraties/${declaratie}`);
+    await statusKaart.getByLabel("Uitbetaald op").fill("28-11-2026");
+    await statusKaart
+      .getByRole("button", { name: "Uitbetaald door de bank" })
+      .click();
+    await pA
+      .getByText("Uitbetaald. De betalingen uit het bouwdepot")
+      .waitFor({ timeout: 20000 });
+    const { data: tfBetalingen } = await clientA
+      .from("payments")
+      .select("amount_cents, funding_source_id, depot_claim_id, paid_on")
+      .eq("cost_document_id", aiDocument);
+    const { data: termijnBetalingen } = await clientA
+      .from("payments")
+      .select("amount_cents, funding_source_id, depot_claim_id")
+      .eq("cost_document_id", termijnFactuur)
+      .order("amount_cents");
+    ok(
+      tfBetalingen.length === 1 &&
+        tfBetalingen[0].amount_cents === 30250 &&
+        tfBetalingen[0].funding_source_id === depot.id &&
+        tfBetalingen[0].depot_claim_id === declaratie &&
+        tfBetalingen[0].paid_on === "2026-11-28",
+      "uitbetaald: open factuur (€ 302,50) betaald uit het bouwdepot op 28-11-2026",
+    );
+    ok(
+      termijnBetalingen.map((b) => b.amount_cents).join() ===
+        "100000,210000,500000" &&
+        termijnBetalingen[0].funding_source_id === depot.id &&
+        termijnBetalingen[0].depot_claim_id === declaratie &&
+        termijnBetalingen
+          .slice(1)
+          .every((b) => b.funding_source_id === eigen.id),
+      "voorgeschoten € 1.000 van de termijnfactuur gaat over naar het bouwdepot (betaling gesplitst); totaal blijft € 8.100",
+    );
+    await pA.goto(`${APP}/financiering`);
+    ok(
+      normaal(
+        await pA.getByRole("region", { name: "Bouwdepot" }).innerText(),
+      ).includes("Uitbetaald € 1.302,50"),
+      "bouwdepot toont € 1.302,50 uitbetaald",
+    );
+    if (SCREENSHOTS) {
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/financiering.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 390, height: 844 });
+      await pA.screenshot({
+        path: `${SCREENSHOTS}/financiering-mobiel.png`,
+        fullPage: true,
+      });
+      await pA.setViewportSize({ width: 1440, height: 900 });
+    }
+
+    // Tweede declaratie: concept → ingediend → afgewezen → verwijderd.
+    await pA.getByRole("link", { name: "Declaratie maken" }).click();
+    await pA.waitForURL(/\/financiering\/declaraties\/nieuw/, {
+      timeout: 20000,
+    });
+    await pA
+      .getByRole("checkbox", { name: /Bouwmarkt Zuid/ })
+      .first()
+      .check();
+    await pA.getByRole("button", { name: "Opslaan als concept" }).click();
+    await pA.waitForURL(uuidEind("/financiering/declaraties"), {
+      timeout: 20000,
+    });
+    const status2 = pA.getByRole("region", { name: "Status" });
+    await status2
+      .getByRole("button", { name: "Ingediend bij de bank" })
+      .click();
+    await pA.getByText("Declaratie ingediend.").waitFor({ timeout: 20000 });
+    await status2
+      .getByRole("button", { name: "Afgewezen door de bank" })
+      .click();
+    await pA
+      .getByText("Declaratie afgewezen; hij telt niet meer mee.")
+      .waitFor({ timeout: 20000 });
+    await status2.getByLabel("Ja, verwijder deze declaratie.").check();
+    await status2
+      .getByRole("button", { name: "Declaratie verwijderen" })
+      .click();
+    await pA.waitForURL((u) => u.pathname === "/financiering", {
+      timeout: 20000,
+    });
+    const { data: declaraties } = await clientA
+      .from("depot_claims")
+      .select("id, status")
+      .eq("project_id", projectId);
+    ok(
+      declaraties.length === 1 && declaraties[0].status === "uitbetaald",
+      "tweede declaratie ingediend, afgewezen en verwijderd; de uitbetaalde blijft",
+    );
+
+    // Hypotheek aanpassen: bouwdepot 120.000; betalingen blijven gekoppeld.
+    await pA.goto(`${APP}/financiering/${hyp.id}`);
+    await pA.getByLabel("Bedrag in het bouwdepot (optioneel)").fill("120.000");
+    await pA
+      .getByText("Overige hypotheekruimte: € 280.000,00")
+      .waitFor({ timeout: 20000 });
+    await pA.getByRole("button", { name: "Wijzigingen opslaan" }).click();
+    await pA.waitForURL((u) => u.pathname === "/financiering", {
+      timeout: 20000,
+    });
+    const { data: delenNa } = await clientA
+      .from("funding_sources")
+      .select("id, amount_cents")
+      .eq("parent_source_id", hyp.id)
+      .order("amount_cents");
+    ok(
+      delenNa.map((d) => `${d.id}:${d.amount_cents}`).join() ===
+        `${depot.id}:12000000,${overig.id}:28000000`,
+      "bouwdepot 120.000 / overige 280.000: dezelfde delen, betalingen blijven gekoppeld",
+    );
+    await pA.goto(`${APP}/financiering/${hyp.id}`);
+    await pA.getByLabel("Bedrag in het bouwdepot (optioneel)").fill("");
+    await pA.getByRole("button", { name: "Wijzigingen opslaan" }).click();
+    await pA
+      .getByText(
+        "Aan het deel dat je weghaalt zijn betalingen of declaraties gekoppeld",
+      )
+      .waitFor({ timeout: 20000 });
+    ok(true, "bouwdepot met betalingen kan niet zomaar uit de hypotheek");
+
+    // Dashboard: het hoofdgetal is nu de financiële ruimte.
+    await pA.goto(`${APP}/dashboard`);
+    ok(
+      (await pA.getByText("Financiële ruimte").count()) >= 1,
+      "dashboard toont de financiële ruimte als hoofdgetal",
+    );
+
+    // Toegang: B ziet hetzelfde, C niets.
+    const tabellenF = ["funding_sources", "depot_claims", "depot_claim_lines"];
+    const zichtF = async (c) => {
+      const uit = {};
+      for (const t of tabellenF) {
+        const { data, error } = await c.from(t).select("*").order("created_at");
+        if (error) throw new Error(`${t}: ${error.message}`);
+        uit[t] = data;
+      }
+      return uit;
+    };
+    const fA = await zichtF(clientA);
+    const fB = await zichtF(clientB);
+    const fC = await zichtF(clientC);
+    ok(
+      JSON.stringify(fA) === JSON.stringify(fB) &&
+        fA.funding_sources.length === 4 &&
+        fA.depot_claim_lines.length === 2 &&
+        tabellenF.every((t) => fC[t].length === 0),
+      "B ziet dezelfde financiering en declaraties; C ziet er niets van",
+    );
+    const cFin = await clientC.rpc("save_funding_source", {
+      p_source: {
+        project_id: projectId,
+        type: "overig",
+        name: "Inbraak",
+        amount_cents: 1,
+      },
+      p_parts: [],
+    });
+    ok(
+      Boolean(cFin.error),
+      "C kan geen financiering toevoegen aan het project",
+    );
 
     const anon = createClient(URL_SB, publishable, geenSessie);
     const anonLees = await anon.from("projects").select("id");

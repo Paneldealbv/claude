@@ -417,6 +417,38 @@ Keuzes die bij het programmeren concreet zijn gemaakt:
 - Export alleen voor ingelogde leden van het project; de bestanden worden
   nergens bewaard of gecachet.
 
+### 3.15 Financiering en bouwdepot (vastgelegd in fase 9)
+
+- **Bronnen** (`/financiering`): eigen geld, hypotheek, schenking, lening en
+  overig. Per bron het bedrag, wat eruit betaald is en het saldo; bovenaan de
+  totale financiering, de prognose, de **financiële ruimte** (financiering −
+  prognose; negatief = tekort) en wat er na de betalingen nog beschikbaar is.
+- **Hypotheek met bouwdepot**: in het formulier van de hypotheek vul je het
+  bedrag van het bouwdepot in; de app maakt de delen bouwdepot en overige
+  hypotheekruimte (samen precies het hypotheekbedrag). Opslaan gaat in één keer
+  (`save_funding_source`); bestaande delen blijven dezelfde rijen, zodat
+  betalingen en declaraties eraan gekoppeld blijven. Een deel met betalingen of
+  declaraties kan niet zomaar weg. Het soort bron ligt vast na het aanmaken.
+- **Betalingen zonder bron** (bijv. ingevoerd vóór de financiering) staan op
+  de financieringspagina en kunnen in één keer aan een bron worden gekoppeld.
+  In het betaalformulier heten delen "Bouwdepot (Hypotheek)".
+- **Declaraties bij het bouwdepot**: je kiest geboekte facturen en per factuur
+  het bedrag (standaard wat er nog van de factuur kan). Status: concept →
+  ingediend → uitbetaald, of afgewezen (telt dan niet meer mee). Nooit meer
+  declareren dan een factuur, en alle niet-afgewezen declaraties samen nooit
+  meer dan het bouwdepot.
+- **Uitbetalen** (`pay_out_depot_claim`): per factuur wordt wat nog openstond
+  een betaling uit het bouwdepot (op de datum van uitbetaling). Was de factuur
+  al (deels) zelf betaald (voorgeschoten), dan gaat dat deel van die betaling
+  over naar het bouwdepot, zo nodig gesplitst; de betaaldatum blijft. Zo klopt
+  het saldo van eigen geld én van het bouwdepot, en wordt nooit dubbel betaald.
+  Een uitbetaalde declaratie ligt vast.
+- **Bouwdepot-overzicht**: bedrag, uitbetaald, gedeclareerd (ingediend en
+  concept) en nog vrij, met een waarschuwing als de looptijd binnen 90 dagen
+  afloopt of verlopen is.
+- Het dashboard toont zodra er financiering is de financiële ruimte als
+  hoofdgetal; de activiteit noemt nieuwe bronnen en declaraties.
+
 ---
 
 ## 4. Database-tabellen
@@ -459,10 +491,11 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 
 ### Financiering
 
-| Tabel             | Belangrijkste velden                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `funding_sources` | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id (leeg = hoofdbron; gevuld = deel, bijv. bouwdepot) |
-| `depot_claims`    | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status (schermen later)                                            |
+| Tabel               | Belangrijkste velden                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `funding_sources`   | type, naam, verstrekker, bedrag, rente, ingangsdatum, einddatum, parent_source_id (leeg = hoofdbron; gevuld = deel, bijv. bouwdepot) |
+| `depot_claims`      | funding_source_id, declaratienummer, ingediend_op, uitbetaald_op, status                                                             |
+| `depot_claim_lines` | declaratie, factuur (cost_document), bedrag — welke facturen in een declaratie zitten (0012)                                         |
 
 ### Documenten en AI
 
@@ -489,6 +522,11 @@ Elke tabel heeft ook `id` (uuid), `project_id`, `created_by`, `created_at` en
 - `save_cost_document` en `delete_cost_document` (0011): document met regels,
   ruimteverdeling en betalingen in één transactie, met de rechten van de
   gebruiker (RLS blijft gelden).
+- `save_funding_source`, `save_depot_claim`, `set_depot_claim_status` en
+  `pay_out_depot_claim` (0012): financiering en declaraties in één transactie,
+  met de rechten van de gebruiker. Declaraties alleen met geboekte facturen,
+  per factuur nooit meer dan het bedrag, samen nooit meer dan het bouwdepot;
+  een uitbetaalde declaratie ligt vast.
 - Row Level Security op elke tabel: lezen voor alle leden, schrijven alleen voor
   `eigenaar` en `bewerker`. Leden en uitnodigingen beheert alleen de `eigenaar`.
 
@@ -619,5 +657,5 @@ Na elke fase: testen, committen, pushen en wachten op feedback.
 | 6. Documenten en betalingen ✓           | Facturen, termijn- en eindfacturen, creditnota's, bonnen met meerdere regels, uploads, betalingen                            |
 | 7. Dashboard en rapportages ✓           | KPI's, grafieken, rapport per categorie/ruimte/leverancier, export                                                           |
 | 8. AI-documentherkenning ✓              | Uitlezen, controles, duplicaten, contractkoppeling, controlescherm                                                           |
-| 9. Financiering                         | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
+| 9. Financiering ✓                       | Bronnen en saldi; daarna uitgebreid bouwdepot en declaraties                                                                 |
 | 10. Afronding                           | PWA, prestaties, toegankelijkheid, beveiligingscontrole, eigen domein                                                        |
