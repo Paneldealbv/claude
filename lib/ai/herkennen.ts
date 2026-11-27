@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { AntwoordSchema, naarHerkenning, type Herkenning } from "./schema";
+import { schoneSleutel, sleutelGeweigerd } from "./sleutel";
 
 /*
  * Documentherkenning met de Claude API (docs/ARCHITECTUUR.md § 5).
@@ -19,11 +20,9 @@ export const AI_TYPEN = [
   "image/webp",
 ] as const;
 
-/** Sleutel uit de omgeving, zonder per ongeluk meegeplakte spaties of quotes. */
+/** Sleutel uit de omgeving, zonder per ongeluk meegeplakte tekens. */
 function apiSleutel() {
-  return (process.env.ANTHROPIC_API_KEY ?? "")
-    .trim()
-    .replace(/^["']+|["']+$/g, "");
+  return schoneSleutel(process.env.ANTHROPIC_API_KEY);
 }
 
 export function aiBeschikbaar() {
@@ -231,7 +230,7 @@ export async function leesDocument(
       return {
         ok: false,
         detail,
-        fout: "De API-sleutel voor de AI wordt geweigerd. Controleer de instelling.",
+        fout: sleutelGeweigerd(apiSleutel()),
       };
     }
     if (fout instanceof Anthropic.RateLimitError) {

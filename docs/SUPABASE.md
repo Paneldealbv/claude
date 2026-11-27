@@ -165,6 +165,13 @@ bereik "Organisatie" werkt alleen als je ook `ANTHROPIC_WORKSPACE_ID` instelt
 (het id van de workspace, `wrkspc_…`). Lukt het uitlezen niet, dan staat de
 reden op het controlescherm onder "Technische details".
 
+**Sleutel gewijzigd?** Elke deployment houdt de sleutel die gold toen hij werd
+gemaakt. Deploy dus opnieuw: voor de live site de Production-deployment, voor
+de testversie van een branch de nieuwste deployment van die branch (of push
+een nieuwe commit). Weigert Anthropic de sleutel, dan noemt het controlescherm
+de laatste vier tekens van de sleutel die de app gebruikt. Zo zie je of er nog
+een oude sleutel in zit.
+
 Zonder sleutel werkt de app gewoon; alleen het automatisch uitlezen staat uit.
 
 Controle na een deploy: `APP_URL=https://nieuwbouw-dashboard-paneldeal.vercel.app npm run test:e2e`
